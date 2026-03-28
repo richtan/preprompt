@@ -1,5 +1,5 @@
 import { execa } from "execa"
-import type { AgentAdapter } from "./types.js"
+import type { AgentAdapter, ExecuteOptions } from "./types.js"
 import type { AgentInfo, ExecutionResult } from "../types.js"
 
 const STDIN_THRESHOLD = 100_000 // 100KB
@@ -22,18 +22,14 @@ export const claudeCode: AgentAdapter = {
       return info
     }
 
-    // If we got a version, assume authenticated. The actual auth check
-    // (running a prompt) is too slow for detection. Auth failures surface
-    // at execution time with a clear error.
     info.authenticated = true
-
     return info
   },
 
   async execute(
     prompt: string,
     workdir: string,
-    options: { timeout: number }
+    options: ExecuteOptions
   ): Promise<ExecutionResult> {
     const start = Date.now()
 
@@ -50,12 +46,39 @@ export const claudeCode: AgentAdapter = {
     }
 
     try {
-      const result = await execa("claude", args, {
+      const proc = execa("claude", args, {
         cwd: workdir,
         timeout: options.timeout,
         input: useStdin ? prompt : undefined,
         reject: false,
       })
+
+      // Stream stdout line-by-line as it arrives
+      if (options.onOutput && proc.stdout) {
+        let buffer = ""
+        proc.stdout.on("data", (chunk: Buffer) => {
+          buffer += chunk.toString()
+          const lines = buffer.split("\n")
+          buffer = lines.pop() ?? ""
+          for (const line of lines) {
+            if (line.trim()) options.onOutput!(line, "stdout")
+          }
+        })
+      }
+
+      if (options.onOutput && proc.stderr) {
+        let buffer = ""
+        proc.stderr.on("data", (chunk: Buffer) => {
+          buffer += chunk.toString()
+          const lines = buffer.split("\n")
+          buffer = lines.pop() ?? ""
+          for (const line of lines) {
+            if (line.trim()) options.onOutput!(line, "stderr")
+          }
+        })
+      }
+
+      const result = await proc
 
       return {
         exitCode: result.exitCode ?? 1,

@@ -1,5 +1,5 @@
 import { execa } from "execa"
-import type { AgentAdapter } from "./types.js"
+import type { AgentAdapter, ExecuteOptions } from "./types.js"
 import type { AgentInfo, ExecutionResult } from "../types.js"
 
 export const copilot: AgentAdapter = {
@@ -32,12 +32,12 @@ export const copilot: AgentAdapter = {
   async execute(
     prompt: string,
     workdir: string,
-    options: { timeout: number }
+    options: ExecuteOptions
   ): Promise<ExecutionResult> {
     const start = Date.now()
 
     try {
-      const result = await execa(
+      const proc = execa(
         "gh",
         ["copilot", "suggest", "-t", "shell", prompt],
         {
@@ -46,6 +46,20 @@ export const copilot: AgentAdapter = {
           reject: false,
         }
       )
+
+      if (options.onOutput && proc.stdout) {
+        let buffer = ""
+        proc.stdout.on("data", (chunk: Buffer) => {
+          buffer += chunk.toString()
+          const lines = buffer.split("\n")
+          buffer = lines.pop() ?? ""
+          for (const line of lines) {
+            if (line.trim()) options.onOutput!(line, "stdout")
+          }
+        })
+      }
+
+      const result = await proc
 
       return {
         exitCode: result.exitCode ?? 1,

@@ -1,11 +1,16 @@
 import type { AgentInfo, ExecutionResult } from "../types.js"
 
+export interface ExecuteOptions {
+  timeout: number
+  onOutput?: (line: string, stream: "stdout" | "stderr") => void
+}
+
 export interface AgentAdapter {
   name: string
   detect(): Promise<AgentInfo>
   execute(
     prompt: string,
     workdir: string,
-    options: { timeout: number }
+    options: ExecuteOptions
   ): Promise<ExecutionResult>
 }

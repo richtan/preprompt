@@ -74,25 +74,40 @@ async function runSingleAgent(
 
     const before = await captureSnapshot(sandbox.dir)
 
-    const execution = await adapter.execute(
-      `Follow these instructions exactly in the current directory:\n\n${promptContent}`,
-      sandbox.dir,
-      { timeout }
-    )
+    // Heartbeat: show elapsed time every 10s so the user knows it's alive
+    let heartbeat: ReturnType<typeof setInterval> | null = null
+    const startTime = Date.now()
+    if (streaming) {
+      heartbeat = setInterval(() => {
+        const elapsed = Math.round((Date.now() - startTime) / 1000)
+        emitEvent({
+          agent: agentName,
+          type: "stdout",
+          content: `... working (${elapsed}s)`,
+          timestamp: Date.now(),
+        })
+      }, 10_000)
+    }
 
-    // Stream stdout/stderr lines as events
-    if (streaming && execution.stdout) {
-      for (const line of execution.stdout.split("\n")) {
-        if (line.trim()) {
+    // Stream output in real time via onOutput callback
+    const onOutput = streaming
+      ? (line: string, stream: "stdout" | "stderr") => {
           emitEvent({
             agent: agentName,
-            type: "stdout",
+            type: stream === "stderr" ? "stderr" : "stdout",
             content: line,
             timestamp: Date.now(),
           })
         }
-      }
-    }
+      : undefined
+
+    const execution = await adapter.execute(
+      `Follow these instructions exactly in the current directory:\n\n${promptContent}`,
+      sandbox.dir,
+      { timeout, onOutput }
+    )
+
+    if (heartbeat) clearInterval(heartbeat)
 
     const after = await captureSnapshot(sandbox.dir)
     const diff = diffSnapshots(before, after)
@@ -207,7 +222,7 @@ export async function runLocal(
   }
 
   // 5. Run all agents in parallel
-  const streaming = installed.length > 1 && !options.json && !options.quiet
+  const streaming = !options.json && !options.quiet
   if (streaming) {
     clearEvents()
     console.log()
