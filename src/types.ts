@@ -40,3 +40,9 @@ export interface RunResult {
   status: "pass" | "fail" | "timeout" | "error" | "no-changes"
   timestamp: number
 }
+
+export interface MultiRunResult {
+  prompt: string
+  results: RunResult[]
+  timestamp: number
+}

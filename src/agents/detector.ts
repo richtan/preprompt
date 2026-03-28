@@ -1,9 +1,12 @@
 import type { AgentAdapter } from "./types.js"
 import type { AgentInfo } from "../types.js"
 import { claudeCode } from "./claude-code.js"
+import { codex } from "./codex.js"
+import { aider } from "./aider.js"
+import { copilot } from "./copilot.js"
 
 // Registry of all known adapters. Add new ones here.
-const adapters: AgentAdapter[] = [claudeCode]
+const adapters: AgentAdapter[] = [claudeCode, codex, aider, copilot]
 
 export async function detectAgents(): Promise<AgentInfo[]> {
   const results = await Promise.allSettled(

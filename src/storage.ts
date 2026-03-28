@@ -1,6 +1,6 @@
 import { mkdir, writeFile, readdir, readFile } from "node:fs/promises"
 import { join } from "node:path"
-import type { RunResult } from "./types.js"
+import type { MultiRunResult } from "./types.js"
 
 const RESULTS_DIR = ".pstack/runs"
 
@@ -18,7 +18,7 @@ function runId(): string {
   ].join("")
 }
 
-export async function saveResult(result: RunResult): Promise<string> {
+export async function saveMultiResult(result: MultiRunResult): Promise<string> {
   const id = runId()
   const dir = join(RESULTS_DIR, id)
   await mkdir(dir, { recursive: true })
@@ -41,11 +41,24 @@ export async function listRuns(): Promise<string[]> {
   }
 }
 
-export async function loadResult(id: string): Promise<RunResult | null> {
+export async function loadResult(id: string): Promise<MultiRunResult | null> {
   try {
     const data = await readFile(join(RESULTS_DIR, id, "result.json"), "utf8")
-    return JSON.parse(data) as RunResult
+    return JSON.parse(data) as MultiRunResult
   } catch {
     return null
   }
+}
+
+export async function loadLatestResult(): Promise<{
+  id: string
+  result: MultiRunResult
+} | null> {
+  const runs = await listRuns()
+  if (runs.length === 0) return null
+
+  const result = await loadResult(runs[0])
+  if (!result) return null
+
+  return { id: runs[0], result }
 }
