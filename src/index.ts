@@ -5,6 +5,7 @@ import { runLocal } from "./commands/local.js"
 import { detectAgents } from "./agents/detector.js"
 import { renderAgentList, renderDiff, renderError } from "./output/terminal.js"
 import { loadLatestResult, listRuns, loadResult } from "./storage.js"
+import { renderTrace, renderTraceComparison } from "./trace.js"
 
 const program = new Command()
 
@@ -78,6 +79,47 @@ program
     }
 
     renderDiff(result)
+  })
+
+program
+  .command("trace [agent]")
+  .description(
+    "Replay an agent's execution trace, or compare all agents with --compare"
+  )
+  .option("--compare", "Compare traces across all agents side-by-side", false)
+  .option("--run <runId>", "Specify a run ID (defaults to latest)")
+  .action(async (agent: string | undefined, opts: { compare: boolean; run?: string }) => {
+    let multi
+    if (opts.run) {
+      multi = await loadResult(opts.run)
+      if (!multi) {
+        renderError(`Run not found: ${opts.run}`)
+        process.exitCode = 1
+        return
+      }
+    } else {
+      const latest = await loadLatestResult()
+      if (!latest) {
+        renderError("No runs found. Run pstack local <prompt> first.")
+        process.exitCode = 1
+        return
+      }
+      multi = latest.result
+    }
+
+    if (opts.compare || !agent) {
+      renderTraceComparison(multi)
+    } else {
+      const result = multi.results.find((r) => r.agent === agent)
+      if (!result) {
+        renderError(
+          `Agent "${agent}" not found in this run. Available: ${multi.results.map((r) => r.agent).join(", ")}`
+        )
+        process.exitCode = 1
+        return
+      }
+      renderTrace(result)
+    }
   })
 
 program

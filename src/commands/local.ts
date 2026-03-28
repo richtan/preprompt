@@ -1,3 +1,4 @@
+import chalk from "chalk"
 import { readFile, access } from "node:fs/promises"
 import { resolve } from "node:path"
 import { detectAgents, getInstalledAdapters } from "../agents/detector.js"
@@ -18,6 +19,7 @@ import { saveMultiResult } from "../storage.js"
 import { scanPrompt } from "../scanner.js"
 import { analyzePrompt } from "../matrix.js"
 import { parseInlineCheck, runChecks, allChecksPassed, type Check, type CheckResult } from "../checks.js"
+import { emitEvent, clearEvents } from "../output/stream.js"
 import type { RunResult, MultiRunResult } from "../types.js"
 
 export interface LocalOptions {
@@ -54,11 +56,22 @@ async function runSingleAgent(
   adapter: AgentAdapter,
   promptContent: string,
   promptFile: string | null,
-  timeout: number
+  timeout: number,
+  streaming: boolean = false
 ): Promise<RunResult> {
   const sandbox = await createSandbox()
+  const agentName = adapter.name
 
   try {
+    if (streaming) {
+      emitEvent({
+        agent: agentName,
+        type: "start",
+        content: "Starting...",
+        timestamp: Date.now(),
+      })
+    }
+
     const before = await captureSnapshot(sandbox.dir)
 
     const execution = await adapter.execute(
@@ -67,8 +80,34 @@ async function runSingleAgent(
       { timeout }
     )
 
+    // Stream stdout/stderr lines as events
+    if (streaming && execution.stdout) {
+      for (const line of execution.stdout.split("\n")) {
+        if (line.trim()) {
+          emitEvent({
+            agent: agentName,
+            type: "stdout",
+            content: line,
+            timestamp: Date.now(),
+          })
+        }
+      }
+    }
+
     const after = await captureSnapshot(sandbox.dir)
     const diff = diffSnapshots(before, after)
+
+    // Emit file events for streaming mode
+    if (streaming) {
+      for (const file of diff.added) {
+        emitEvent({
+          agent: agentName,
+          type: "file",
+          content: `Created ${file}`,
+          timestamp: Date.now(),
+        })
+      }
+    }
 
     const noChanges =
       diff.added.length === 0 &&
@@ -84,6 +123,16 @@ async function runSingleAgent(
       status = "no-changes"
     } else {
       status = "pass"
+    }
+
+    if (streaming) {
+      const icon = status === "pass" ? "✓" : "✗"
+      emitEvent({
+        agent: agentName,
+        type: "done",
+        content: `${icon} Done (${(execution.duration / 1000).toFixed(1)}s, ${diff.added.length} files)`,
+        timestamp: Date.now(),
+      })
     }
 
     return {
@@ -158,9 +207,19 @@ export async function runLocal(
   }
 
   // 5. Run all agents in parallel
+  const streaming = installed.length > 1 && !options.json && !options.quiet
+  if (streaming) {
+    clearEvents()
+    console.log()
+    console.log(
+      chalk.bold(`  PromptStack — running on ${installed.length} agents`)
+    )
+    console.log()
+  }
+
   const results = await Promise.allSettled(
     installed.map((adapter) =>
-      runSingleAgent(adapter, promptContent, promptFile, options.timeout)
+      runSingleAgent(adapter, promptContent, promptFile, options.timeout, streaming)
     )
   )
 
