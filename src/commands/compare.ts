@@ -108,7 +108,7 @@ export async function runCompare(
 export async function runCompareLatest(): Promise<void> {
   const runs = await listRuns()
   if (runs.length < 2) {
-    renderError("Need at least 2 runs to compare. Run pstack twice first.")
+    renderError("Need at least 2 runs to compare. Run preprompt twice first.")
     process.exitCode = 1
     return
   }

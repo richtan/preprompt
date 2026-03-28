@@ -20,7 +20,7 @@ export async function runBadge(opts: {
   } else {
     const latest = await loadLatestResult()
     if (!latest) {
-      renderError("No runs found. Run pstack <prompt> first.")
+      renderError("No runs found. Run preprompt <prompt> first.")
       process.exitCode = 1
       return
     }
@@ -28,7 +28,7 @@ export async function runBadge(opts: {
   }
 
   const svg = generateBadgeSvg(multi)
-  const outPath = resolve(opts.output ?? "pstack-badge.svg")
+  const outPath = resolve(opts.output ?? "preprompt-badge.svg")
 
   await writeFile(outPath, svg, "utf8")
 
@@ -36,7 +36,7 @@ export async function runBadge(opts: {
   console.log(chalk.green(`  Badge saved to ${outPath}`))
   console.log()
   console.log(chalk.dim("  Add to your README:"))
-  console.log(chalk.dim(`  ![PromptStack](./pstack-badge.svg)`))
+  console.log(chalk.dim(`  ![PrePrompt](./preprompt-badge.svg)`))
   console.log()
 }
 
@@ -80,7 +80,7 @@ function generateBadgeSvg(multi: MultiRunResult): string {
   <rect width="${totalWidth}" height="${totalHeight}" rx="6" fill="#0a0a0a"/>
   <rect width="${totalWidth}" height="${headerHeight}" rx="6" fill="${headerColor}" opacity="0.15"/>
   <rect y="${headerHeight - 1}" width="${totalWidth}" height="1" fill="${headerColor}" opacity="0.1"/>
-  <text x="${padding}" y="${headerHeight / 2 + 1}" dominant-baseline="middle" fill="${headerColor}" font-size="12" font-family="system-ui,-apple-system,sans-serif" font-weight="600">PromptStack</text>
+  <text x="${padding}" y="${headerHeight / 2 + 1}" dominant-baseline="middle" fill="${headerColor}" font-size="12" font-family="system-ui,-apple-system,sans-serif" font-weight="600">PrePrompt</text>
   <text x="${totalWidth - padding}" y="${headerHeight / 2 + 1}" text-anchor="end" dominant-baseline="middle" fill="${headerColor}" font-size="11" font-family="system-ui,-apple-system,sans-serif" font-weight="400">${passed}/${total} passed</text>
   ${agentCells}
 </svg>`

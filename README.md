@@ -1,45 +1,45 @@
-# PromptStack
+# PrePrompt
 
 Test any prompt on every AI tool. One command, every agent, see what happened.
 
 ```bash
-pstack CLAUDE.md
+preprompt CLAUDE.md
 ```
 
-PromptStack runs your AI instructions through coding agents (Claude Code, Codex, Aider, etc.) in clean sandboxes and shows you exactly what each agent did, files created, commands run, pass or fail.
+PrePrompt runs your AI instructions through coding agents (Claude Code, Codex, Aider, etc.) in clean sandboxes and shows you exactly what each agent did, files created, commands run, pass or fail.
 
 ## Install
 
 ```bash
-npm install -g @promptstack/cli
+npm install -g preprompt
 ```
 
 Or run without installing:
 
 ```bash
-npx @promptstack/cli CLAUDE.md
+npx preprompt CLAUDE.md
 ```
 
 ## Usage
 
 ```bash
 # Test a prompt file
-pstack CLAUDE.md
+preprompt CLAUDE.md
 
 # Test an inline prompt
-pstack "Create a Next.js app with TypeScript and Tailwind"
+preprompt "Create a Next.js app with TypeScript and Tailwind"
 
 # Test with specific agents
-pstack CLAUDE.md --agents claude-code,codex
+preprompt CLAUDE.md --agents claude-code,codex
 
 # See which agents are available
-pstack list
+preprompt list
 
 # CI mode: assert files exist, exit code 1 on failure
-pstack CLAUDE.md --check "file-exists:package.json" --check "dir-exists:src" --quiet
+preprompt CLAUDE.md --check "file-exists:package.json" --check "dir-exists:src" --quiet
 
 # JSON output
-pstack CLAUDE.md --json
+preprompt CLAUDE.md --json
 ```
 
 ## Output
@@ -60,7 +60,7 @@ Single agent:
 
 Multiple agents (parallel, with live streaming):
 ```
-  PromptStack — running on 3 agents
+  PrePrompt — running on 3 agents
 
   claude-code  │ ⚡ npm install
   codex        │ ⚡ yarn add react next
@@ -79,17 +79,17 @@ Multiple agents (parallel, with live streaming):
 
 | Command | What it does |
 |---------|-------------|
-| `pstack <prompt>` | Run a prompt on all detected agents |
-| `pstack list` | Show detected agents and their status |
-| `pstack diff` | Compare filesystem results across agents |
-| `pstack trace` | Replay an agent's execution step by step |
-| `pstack doctor` | Diagnose why an agent failed (AI-powered) |
-| `pstack fix` | Suggest prompt rewrites to fix failures |
-| `pstack compare` | Before/after comparison of two runs |
-| `pstack badge` | Generate an SVG compatibility badge |
-| `pstack explain` | Show agent strengths, weaknesses, quirks |
-| `pstack history` | Browse past runs |
-| `pstack completions` | Generate zsh completions |
+| `preprompt <prompt>` | Run a prompt on all detected agents |
+| `preprompt list` | Show detected agents and their status |
+| `preprompt diff` | Compare filesystem results across agents |
+| `preprompt trace` | Replay an agent's execution step by step |
+| `preprompt doctor` | Diagnose why an agent failed (AI-powered) |
+| `preprompt fix` | Suggest prompt rewrites to fix failures |
+| `preprompt compare` | Before/after comparison of two runs |
+| `preprompt badge` | Generate an SVG compatibility badge |
+| `preprompt explain` | Show agent strengths, weaknesses, quirks |
+| `preprompt history` | Browse past runs |
+| `preprompt completions` | Generate zsh completions |
 
 ## Agents
 

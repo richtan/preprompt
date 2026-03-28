@@ -212,7 +212,7 @@ export async function runLocal(
     clearEvents()
     console.log()
     console.log(
-      chalk.bold(`  PromptStack — running on ${installed.length} agents`)
+      chalk.bold(`  PrePrompt — running on ${installed.length} agents`)
     )
     console.log()
   }

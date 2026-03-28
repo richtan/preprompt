@@ -23,7 +23,7 @@ export async function runDoctor(opts: {
   } else {
     const latest = await loadLatestResult()
     if (!latest) {
-      renderError("No runs found. Run pstack <prompt> first.")
+      renderError("No runs found. Run preprompt <prompt> first.")
       process.exitCode = 1
       return
     }

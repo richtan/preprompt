@@ -7,7 +7,7 @@ import { captureSnapshot, diffSnapshots } from "../src/sandbox/snapshot.js"
 let testDir: string
 
 beforeEach(async () => {
-  testDir = await mkdtemp(join(tmpdir(), "pstack-test-"))
+  testDir = await mkdtemp(join(tmpdir(), "preprompt-test-"))
 })
 
 afterEach(async () => {

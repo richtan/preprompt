@@ -80,7 +80,7 @@ export function renderRunResult(result: RunResult): void {
 export function renderMultiRunSummary(multi: MultiRunResult): void {
   console.log()
   console.log(
-    chalk.bold(`  PromptStack — tested ${multi.prompt} on ${multi.results.length} agents`)
+    chalk.bold(`  PrePrompt — tested ${multi.prompt} on ${multi.results.length} agents`)
   )
   console.log()
 
@@ -129,7 +129,7 @@ export function renderMultiRunSummary(multi: MultiRunResult): void {
   console.log(`  ${parts.join(" · ")}`)
 
   if (multi.results.length > 1) {
-    console.log(chalk.dim("  Run: pstack diff to compare agent results"))
+    console.log(chalk.dim("  Run: preprompt diff to compare agent results"))
   }
   console.log()
 }

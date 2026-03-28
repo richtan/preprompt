@@ -16,7 +16,7 @@ import { generateZshCompletions } from "./completions.js"
 const program = new Command()
 
 program
-  .name("pstack")
+  .name("preprompt")
   .description("Test any prompt on every AI tool.")
   .version("0.1.0")
 
@@ -77,7 +77,7 @@ program
     } else {
       const latest = await loadLatestResult()
       if (!latest) {
-        renderError("No runs found. Run pstack local <prompt> first.")
+        renderError("No runs found. Run preprompt local <prompt> first.")
         process.exitCode = 1
         return
       }
@@ -106,7 +106,7 @@ program
     } else {
       const latest = await loadLatestResult()
       if (!latest) {
-        renderError("No runs found. Run pstack local <prompt> first.")
+        renderError("No runs found. Run preprompt local <prompt> first.")
         process.exitCode = 1
         return
       }
@@ -181,7 +181,7 @@ program
   .command("badge")
   .description("Generate an SVG compatibility badge from run results")
   .option("--run <runId>", "Specify a run ID (defaults to latest)")
-  .option("-o, --output <path>", "Output file path", "pstack-badge.svg")
+  .option("-o, --output <path>", "Output file path", "preprompt-badge.svg")
   .action(async (opts: { run?: string; output: string }) => {
     await runBadge({ run: opts.run, output: opts.output })
   })
@@ -206,7 +206,7 @@ program
   .action(async () => {
     const runs = await listRuns()
     if (runs.length === 0) {
-      console.log("\n  No runs yet. Run: pstack local <prompt>\n")
+      console.log("\n  No runs yet. Run: preprompt local <prompt>\n")
       return
     }
     console.log("\n  Past runs:")

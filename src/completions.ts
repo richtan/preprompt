@@ -1,7 +1,7 @@
 export function generateZshCompletions(): string {
-  return `#compdef pstack
+  return `#compdef preprompt
 
-_pstack() {
+_preprompt() {
   local -a commands
   commands=(
     'local:Run a prompt using locally installed AI agents'
@@ -31,7 +31,7 @@ _pstack() {
 
   case "$state" in
     command)
-      _describe 'pstack command' commands
+      _describe 'preprompt command' commands
       ;;
     args)
       case "$words[1]" in
@@ -90,6 +90,6 @@ _pstack() {
   esac
 }
 
-_pstack
+_preprompt
 `
 }

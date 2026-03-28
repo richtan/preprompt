@@ -8,7 +8,7 @@ export interface Sandbox {
 }
 
 export async function createSandbox(): Promise<Sandbox> {
-  const dir = await mkdtemp(join(tmpdir(), "pstack-"))
+  const dir = await mkdtemp(join(tmpdir(), "preprompt-"))
 
   return {
     dir,

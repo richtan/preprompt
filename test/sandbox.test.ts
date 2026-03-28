@@ -9,7 +9,7 @@ describe("createSandbox", () => {
     const sandbox = await createSandbox()
 
     expect(existsSync(sandbox.dir)).toBe(true)
-    expect(sandbox.dir).toContain("pstack-")
+    expect(sandbox.dir).toContain("preprompt-")
 
     await sandbox.destroy()
   })

@@ -2,7 +2,7 @@ import { mkdir, writeFile, readdir, readFile } from "node:fs/promises"
 import { join } from "node:path"
 import type { MultiRunResult } from "./types.js"
 
-const RESULTS_DIR = ".pstack/runs"
+const RESULTS_DIR = ".preprompt/runs"
 
 function runId(): string {
   const now = new Date()

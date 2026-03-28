@@ -121,7 +121,7 @@ export function runExplain(agentName?: string): void {
       console.log(`    ${p.description}`)
       console.log()
     }
-    console.log(chalk.dim("  Run: pstack explain <agent> for full profile"))
+    console.log(chalk.dim("  Run: preprompt explain <agent> for full profile"))
     console.log()
     return
   }

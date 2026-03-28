@@ -23,7 +23,7 @@ export async function runFix(opts: {
   } else {
     const latest = await loadLatestResult()
     if (!latest) {
-      renderError("No runs found. Run pstack <prompt> first.")
+      renderError("No runs found. Run preprompt <prompt> first.")
       process.exitCode = 1
       return
     }
@@ -41,7 +41,7 @@ export async function runFix(opts: {
   // 3. Check if the prompt is a file we can fix
   if (multi.prompt === "(inline)") {
     renderError(
-      "Cannot fix inline prompts. Use a prompt file: pstack ./CLAUDE.md"
+      "Cannot fix inline prompts. Use a prompt file: preprompt ./CLAUDE.md"
     )
     process.exitCode = 1
     return
@@ -109,7 +109,7 @@ export async function runFix(opts: {
           chalk.green(`  Applied fix to ${multi.prompt}`)
         )
         console.log(
-          chalk.dim("  Run pstack again to verify the fix works.")
+          chalk.dim("  Run preprompt again to verify the fix works.")
         )
       } else {
         console.log()
@@ -126,7 +126,7 @@ export async function runFix(opts: {
       console.log()
       console.log(
         chalk.dim(
-          "  Run with --apply to apply the fix: pstack fix --apply"
+          "  Run with --apply to apply the fix: preprompt fix --apply"
         )
       )
     }

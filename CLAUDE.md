@@ -1,4 +1,4 @@
-# PromptStack
+# PrePrompt
 
 CLI tool for testing AI prompts across coding agents. TypeScript, Commander.js, vitest.
 
@@ -9,7 +9,7 @@ src/
   index.ts                CLI entrypoint (Commander.js, 11 commands)
   types.ts                Shared types (RunResult, Snapshot, MultiRunResult)
   scanner.ts              Prompt safety scanner (destructive pattern detection)
-  storage.ts              Result persistence (.pstack/runs/)
+  storage.ts              Result persistence (.preprompt/runs/)
   matrix.ts               Smart matrix: regex-based tool detection from tools/db.json
   trace.ts                Execution trace builder and renderer
   checks.ts               Assertion engine (file-exists, dir-exists, exit-ok, etc.)
@@ -61,12 +61,12 @@ npx vitest run
 - Parallel execution via Promise.allSettled
 - Sandbox uses Node built-in `fs.mkdtemp()`, no tmp-promise
 - Prompt >100KB piped via stdin to avoid shell arg limits
-- Results stored in `.pstack/runs/<timestamp>/result.json`
+- Results stored in `.preprompt/runs/<timestamp>/result.json`
 - Smart matrix uses regex tool detection, no LLM dependency
 - Doctor/fix commands use a detected local agent for AI analysis
 
 ## Package
 
-- npm: `@promptstack/cli`
-- Binary: `pstack`
-- Domain: promptstack.cc
+- npm: `preprompt`
+- Binary: `preprompt`
+- Website: preprompt.dev

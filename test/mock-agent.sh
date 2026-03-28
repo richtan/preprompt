@@ -1,5 +1,5 @@
 #!/bin/bash
-# Mock agent for testing pstack. Creates predictable files in $CWD.
+# Mock agent for testing preprompt. Creates predictable files in $CWD.
 # Simulates a real AI agent that follows setup instructions.
 
 # Parse args — we look for the working directory
