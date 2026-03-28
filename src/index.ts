@@ -6,6 +6,8 @@ import { detectAgents } from "./agents/detector.js"
 import { renderAgentList, renderDiff, renderError } from "./output/terminal.js"
 import { loadLatestResult, listRuns, loadResult } from "./storage.js"
 import { renderTrace, renderTraceComparison } from "./trace.js"
+import { runDoctor } from "./commands/doctor.js"
+import { runFix } from "./commands/fix.js"
 
 const program = new Command()
 
@@ -120,6 +122,42 @@ program
       }
       renderTrace(result)
     }
+  })
+
+program
+  .command("doctor")
+  .description("Diagnose why an agent failed. Uses an AI agent for analysis.")
+  .option("--run <runId>", "Specify a run ID (defaults to latest)")
+  .option("--agent <name>", "Diagnose a specific agent")
+  .option("-t, --timeout <ms>", "Timeout for analysis agent", "60000")
+  .action(
+    async (opts: { run?: string; agent?: string; timeout: string }) => {
+      await runDoctor({
+        run: opts.run,
+        agent: opts.agent,
+        timeout: parseInt(opts.timeout, 10),
+      })
+    }
+  )
+
+program
+  .command("fix")
+  .description(
+    "Suggest prompt rewrites to fix agent failures. Uses an AI agent for analysis."
+  )
+  .option("--run <runId>", "Specify a run ID (defaults to latest)")
+  .option(
+    "--apply",
+    "Apply the suggested fix directly to the prompt file",
+    false
+  )
+  .option("-t, --timeout <ms>", "Timeout for analysis agent", "60000")
+  .action(async (opts: { run?: string; apply: boolean; timeout: string }) => {
+    await runFix({
+      run: opts.run,
+      apply: opts.apply,
+      timeout: parseInt(opts.timeout, 10),
+    })
   })
 
 program

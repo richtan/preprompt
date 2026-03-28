@@ -39,7 +39,7 @@ export const codex: AgentAdapter = {
     if (useStdin) {
       args[1] = "Follow the instructions from stdin"
     }
-    args.push("-C", workdir, "-s", "full-auto")
+    args.push("-C", workdir, "--full-auto")
 
     try {
       const result = await execa("codex", args, {
