@@ -112,17 +112,10 @@ const profiles: AgentProfile[] = [
 
 export function runExplain(agentName?: string): void {
   if (!agentName) {
-    // List all agents
-    console.log()
-    console.log(chalk.bold("  Available agent profiles:"))
-    console.log()
+    const maxName = Math.max(...profiles.map((p) => p.name.length))
     for (const p of profiles) {
-      console.log(`  ${chalk.bold(p.name)}  ${chalk.dim(p.fullName)}`)
-      console.log(`    ${p.description}`)
-      console.log()
+      console.log(`${p.name.padEnd(maxName + 2)}  ${chalk.dim(p.fullName)}`)
     }
-    console.log(chalk.dim("  Run: preprompt explain <agent> for full profile"))
-    console.log()
     return
   }
 
@@ -139,32 +132,22 @@ export function runExplain(agentName?: string): void {
     return
   }
 
-  console.log()
-  console.log(chalk.bold(`  ${profile.fullName}`))
-  console.log(chalk.dim(`  ${profile.description}`))
-  console.log()
-
-  console.log(chalk.green("  Strengths:"))
-  for (const s of profile.strengths) {
-    console.log(chalk.green(`    + ${s}`))
-  }
+  console.log(profile.fullName)
+  console.log(chalk.dim(profile.description))
   console.log()
 
-  console.log(chalk.red("  Weaknesses:"))
-  for (const w of profile.weaknesses) {
-    console.log(chalk.red(`    - ${w}`))
-  }
+  console.log("Strengths:")
+  for (const s of profile.strengths) console.log(`  + ${s}`)
   console.log()
 
-  console.log(chalk.yellow("  Quirks:"))
-  for (const q of profile.quirks) {
-    console.log(chalk.yellow(`    ~ ${q}`))
-  }
+  console.log("Weaknesses:")
+  for (const w of profile.weaknesses) console.log(`  - ${w}`)
   console.log()
 
-  console.log(chalk.dim("  Invocation:"))
-  console.log(chalk.dim(`    ${profile.invocation}`))
-  console.log(chalk.dim("  Non-interactive:"))
-  console.log(chalk.dim(`    ${profile.nonInteractive}`))
+  console.log("Quirks:")
+  for (const q of profile.quirks) console.log(`  ~ ${q}`)
   console.log()
+
+  console.log(chalk.dim(`Invocation: ${profile.invocation}`))
+  console.log(chalk.dim(`Non-interactive: ${profile.nonInteractive}`))
 }

@@ -62,13 +62,13 @@ Multiple agents (parallel, with live streaming):
 ```
   PrePrompt — running on 3 agents
 
-  claude-code  │ ⚡ npm install
-  codex        │ ⚡ yarn add react next
-  aider        │ ⚡ npm install
+  claude-code  │ > npm install
+  codex        │ > yarn add react next
+  aider        │ > npm install
 
-  claude-code  │ 📄 Created src/app/page.tsx
-  codex        │ 📄 Created src/app/page.tsx
-  aider        │ 📄 Created pages/index.tsx      ← divergence!
+  claude-code  │ + Created src/app/page.tsx
+  codex        │ + Created src/app/page.tsx
+  aider        │ + Created pages/index.tsx      ← divergence!
 
   claude-code  │ ✓ Done (34s, 7 files)
   codex        │ ✗ Done (41s, 6 files)

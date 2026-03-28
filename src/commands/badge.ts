@@ -32,12 +32,8 @@ export async function runBadge(opts: {
 
   await writeFile(outPath, svg, "utf8")
 
-  console.log()
-  console.log(chalk.green(`  Badge saved to ${outPath}`))
-  console.log()
-  console.log(chalk.dim("  Add to your README:"))
-  console.log(chalk.dim(`  ![PrePrompt](./preprompt-badge.svg)`))
-  console.log()
+  console.log(chalk.green("Saved") + ` badge to ${outPath}`)
+  console.log(chalk.dim(`  Add to README: ![PrePrompt](./preprompt-badge.svg)`))
 }
 
 function generateBadgeSvg(multi: MultiRunResult): string {
@@ -66,7 +62,7 @@ function generateBadgeSvg(multi: MultiRunResult): string {
         a.status === "no-changes" ? "#eab308" :
         a.status === "timeout" ? "#eab308" :
         "#ef4444"
-      const icon = a.status === "pass" ? "✓" : a.status === "timeout" ? "⏱" : "✗"
+      const icon = a.status === "pass" ? "✓" : a.status === "timeout" ? "~" : "✗"
 
       return `
     <g>

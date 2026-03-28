@@ -19,7 +19,7 @@ import { saveMultiResult } from "../storage.js"
 import { scanPrompt } from "../scanner.js"
 import { analyzePrompt } from "../matrix.js"
 import { parseInlineCheck, runChecks, allChecksPassed, type Check, type CheckResult } from "../checks.js"
-import { emitEvent, clearEvents } from "../output/stream.js"
+import { emitEvent, clearEvents, setStreamMode } from "../output/stream.js"
 import type { RunResult, MultiRunResult } from "../types.js"
 
 export interface LocalOptions {
@@ -28,6 +28,11 @@ export interface LocalOptions {
   agents?: string
   check?: string[]
   quiet?: boolean
+}
+
+function formatDur(ms: number): string {
+  if (ms < 1000) return `${ms}ms`
+  return `${(ms / 1000).toFixed(1)}s`
 }
 
 export async function resolvePrompt(promptInput: string): Promise<{
@@ -83,7 +88,7 @@ async function runSingleAgent(
         emitEvent({
           agent: agentName,
           type: "stdout",
-          content: `... working (${elapsed}s)`,
+          content: `(${elapsed}s)`,
           timestamp: Date.now(),
         })
       }, 10_000)
@@ -112,17 +117,8 @@ async function runSingleAgent(
     const after = await captureSnapshot(sandbox.dir)
     const diff = diffSnapshots(before, after)
 
-    // Emit file events for streaming mode
-    if (streaming) {
-      for (const file of diff.added) {
-        emitEvent({
-          agent: agentName,
-          type: "file",
-          content: `Created ${file}`,
-          timestamp: Date.now(),
-        })
-      }
-    }
+    // File events are already emitted via onOutput during streaming.
+    // No need to emit them again from the diff.
 
     const noChanges =
       diff.added.length === 0 &&
@@ -141,13 +137,19 @@ async function runSingleAgent(
     }
 
     if (streaming) {
-      const icon = status === "pass" ? "✓" : "✗"
-      emitEvent({
-        agent: agentName,
-        type: "done",
-        content: `${icon} Done (${(execution.duration / 1000).toFixed(1)}s, ${diff.added.length} files)`,
-        timestamp: Date.now(),
-      })
+      const dur = formatDur(execution.duration)
+      const files = diff.added.length
+      let content: string
+      if (status === "pass") {
+        content = chalk.green("passed") + ` in ${dur}` + chalk.dim(` (${files} files)`)
+      } else if (status === "timeout") {
+        content = chalk.yellow("timed out") + ` after ${dur}`
+      } else if (status === "no-changes") {
+        content = chalk.yellow("no changes") + ` in ${dur}`
+      } else {
+        content = chalk.red("failed") + chalk.dim(` (exit code ${execution.exitCode}, ${dur})`)
+      }
+      emitEvent({ agent: agentName, type: "done", content, timestamp: Date.now() })
     }
 
     return {
@@ -225,11 +227,13 @@ export async function runLocal(
   const streaming = !options.json && !options.quiet
   if (streaming) {
     clearEvents()
-    console.log()
-    console.log(
-      chalk.bold(`  PrePrompt — running on ${installed.length} agents`)
-    )
-    console.log()
+    const agentNames = installed.map((a) => a.name)
+    setStreamMode(installed.length > 1, agentNames)
+    if (installed.length === 1) {
+      console.log(chalk.green("Running") + ` ${installed[0].name}...`)
+    } else {
+      console.log(chalk.green("Running") + ` ${installed.length} agents in parallel...`)
+    }
   }
 
   const results = await Promise.allSettled(
@@ -306,11 +310,28 @@ export async function runLocal(
       ? { ...multiResult, checks: checkResults }
       : multiResult
     console.log(JSON.stringify(output, null, 2))
-  } else if (runResults.length === 1) {
-    renderRunResult(runResults[0])
+  } else if (streaming) {
+    // Streaming already showed per-agent results live.
+    // Only print the summary line for multi-agent, and checks.
+    if (runResults.length > 1) {
+      console.log()
+      const passed = runResults.filter((r) => r.status === "pass").length
+      const failed = runResults.filter((r) => r.status === "fail" || r.status === "error").length
+      const other = runResults.length - passed - failed
+      const parts: string[] = []
+      if (passed > 0) parts.push(`${passed} passed`)
+      if (failed > 0) parts.push(`${failed} failed`)
+      if (other > 0) parts.push(`${other} other`)
+      console.log(parts.join(", "))
+    }
     if (checkResults.length > 0) renderCheckResults(checkResults)
   } else {
-    renderMultiRunSummary(multiResult)
+    // Non-streaming fallback (shouldn't normally happen)
+    if (runResults.length === 1) {
+      renderRunResult(runResults[0])
+    } else {
+      renderMultiRunSummary(multiResult)
+    }
     if (checkResults.length > 0) renderCheckResults(checkResults)
   }
 

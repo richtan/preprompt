@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 
+import chalk from "chalk"
 import { Command } from "commander"
 import { runLocal } from "./commands/local.js"
 import { detectAgents } from "./agents/detector.js"
@@ -206,21 +207,19 @@ program
   .action(async () => {
     const runs = await listRuns()
     if (runs.length === 0) {
-      console.log("\n  No runs yet. Run: preprompt local <prompt>\n")
+      console.error(chalk.red("error:") + " No runs yet. Run: preprompt <prompt>")
       return
     }
-    console.log("\n  Past runs:")
     for (const id of runs.slice(0, 20)) {
       const result = await loadResult(id)
       if (result && result.results) {
         const agents = result.results.map((r) => r.agent).join(", ")
         const passed = result.results.filter((r) => r.status === "pass").length
-        console.log(`    ${id}  ${agents}  (${passed}/${result.results.length} passed)`)
+        console.log(`${id}  ${agents}  ${passed}/${result.results.length} passed`)
       } else {
-        console.log(`    ${id}`)
+        console.log(id)
       }
     }
-    console.log()
   })
 
 // Default: treat first positional arg as a prompt, run in local mode

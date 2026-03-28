@@ -40,7 +40,6 @@
   "homepage": "https://preprompt.dev",
   "dependencies": {
     "chalk": "^5.4.1",
-    "cli-table3": "^0.6.5",
     "commander": "^13.1.0",
     "execa": "^9.5.2",
     "yaml": "^2.8.3"

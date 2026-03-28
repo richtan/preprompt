@@ -1,5 +1,4 @@
 import chalk from "chalk"
-import Table from "cli-table3"
 import { loadResult, listRuns } from "../storage.js"
 import { renderError } from "../output/terminal.js"
 import type { MultiRunResult } from "../types.js"
@@ -11,98 +10,53 @@ export async function runCompare(
   const a = await loadResult(runIdA)
   const b = await loadResult(runIdB)
 
-  if (!a) {
-    renderError(`Run not found: ${runIdA}`)
-    process.exitCode = 1
-    return
-  }
-  if (!b) {
-    renderError(`Run not found: ${runIdB}`)
-    process.exitCode = 1
-    return
-  }
+  if (!a) { renderError(`Run not found: ${runIdA}`); process.exitCode = 1; return }
+  if (!b) { renderError(`Run not found: ${runIdB}`); process.exitCode = 1; return }
 
-  console.log()
-  console.log(chalk.bold("  Before / After comparison"))
-  console.log(chalk.dim(`  Run A: ${runIdA}  ·  Run B: ${runIdB}`))
+  console.log(chalk.green("Comparing") + " runs")
+  console.log(chalk.dim(`  A: ${runIdA}`))
+  console.log(chalk.dim(`  B: ${runIdB}`))
   console.log()
 
-  // Build a unified agent list
   const agentsA = new Map(a.results.map((r) => [r.agent, r]))
   const agentsB = new Map(b.results.map((r) => [r.agent, r]))
   const allAgents = [...new Set([...agentsA.keys(), ...agentsB.keys()])].sort()
+  const maxName = Math.max(...allAgents.map((n) => n.length))
 
-  const table = new Table({
-    head: [
-      chalk.white("Agent"),
-      chalk.white("Before"),
-      chalk.white("After"),
-      chalk.white("Change"),
-    ],
-    style: { head: [], border: [] },
-  })
-
-  let improved = 0
-  let regressed = 0
-  let same = 0
+  let improved = 0, regressed = 0, same = 0
 
   for (const agent of allAgents) {
-    const resultA = agentsA.get(agent)
-    const resultB = agentsB.get(agent)
+    const rA = agentsA.get(agent)
+    const rB = agentsB.get(agent)
 
-    const statusA = resultA ? resultA.status : "—"
-    const statusB = resultB ? resultB.status : "—"
+    const statusA = rA ? rA.status : "none"
+    const statusB = rB ? rB.status : "none"
+    const filesA = rA ? rA.diff.added.length : 0
+    const filesB = rB ? rB.diff.added.length : 0
 
-    const filesA = resultA ? resultA.diff.added.length : 0
-    const filesB = resultB ? resultB.diff.added.length : 0
+    const name = agent.padEnd(maxName + 2)
+    const colA = rA ? `${statusA} (${filesA} files)` : chalk.dim("not tested")
+    const colB = rB ? `${statusB} (${filesB} files)` : chalk.dim("not tested")
 
     let change: string
-    if (statusA === statusB) {
-      if (filesA === filesB) {
-        change = chalk.dim("no change")
-        same++
-      } else if (filesB > filesA) {
-        change = chalk.green(`↑ +${filesB - filesA} files`)
-        improved++
-      } else {
-        change = chalk.red(`↓ -${filesA - filesB} files`)
-        regressed++
-      }
-    } else if (statusB === "pass" && statusA !== "pass") {
-      change = chalk.green("↑ FIXED")
-      improved++
-    } else if (statusA === "pass" && statusB !== "pass") {
-      change = chalk.red("�� REGRESSION")
-      regressed++
-    } else {
-      change = chalk.yellow("~ changed")
-      same++
-    }
+    if (statusB === "pass" && statusA !== "pass") { change = chalk.green("fixed"); improved++ }
+    else if (statusA === "pass" && statusB !== "pass") { change = chalk.red("regression"); regressed++ }
+    else if (statusA === statusB && filesA === filesB) { change = chalk.dim("no change"); same++ }
+    else if (filesB > filesA) { change = chalk.green(`+${filesB - filesA} files`); improved++ }
+    else if (filesA > filesB) { change = chalk.red(`-${filesA - filesB} files`); regressed++ }
+    else { change = chalk.dim("no change"); same++ }
 
-    const colA = resultA
-      ? `${statusIcon(resultA.status)} ${resultA.status} (${filesA} files)`
-      : chalk.dim("not tested")
-    const colB = resultB
-      ? `${statusIcon(resultB.status)} ${resultB.status} (${filesB} files)`
-      : chalk.dim("not tested")
-
-    table.push([agent, colA, colB, change])
+    console.log(`${name}${colA} -> ${colB}    ${change}`)
   }
 
-  console.log(table.toString())
   console.log()
-
-  // Summary
   const parts: string[] = []
-  if (improved > 0) parts.push(chalk.green(`${improved} improved`))
-  if (regressed > 0) parts.push(chalk.red(`${regressed} regressed`))
-  if (same > 0) parts.push(chalk.dim(`${same} unchanged`))
-  console.log(`  ${parts.join(" · ")}`)
-  console.log()
+  if (improved > 0) parts.push(`${improved} improved`)
+  if (regressed > 0) parts.push(`${regressed} regressed`)
+  if (same > 0) parts.push(`${same} unchanged`)
+  console.log(parts.join(", "))
 
-  if (regressed > 0) {
-    process.exitCode = 1
-  }
+  if (regressed > 0) process.exitCode = 1
 }
 
 export async function runCompareLatest(): Promise<void> {
@@ -112,14 +66,5 @@ export async function runCompareLatest(): Promise<void> {
     process.exitCode = 1
     return
   }
-  await runCompare(runs[1], runs[0]) // older = A, newer = B
-}
-
-function statusIcon(status: string): string {
-  switch (status) {
-    case "pass": return chalk.green("✓")
-    case "no-changes": return chalk.yellow("⚠")
-    case "timeout": return chalk.yellow("⏱")
-    default: return chalk.red("✗")
-  }
+  await runCompare(runs[1], runs[0])
 }

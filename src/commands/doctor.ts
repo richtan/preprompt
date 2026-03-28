@@ -36,7 +36,7 @@ export async function runDoctor(opts: {
     : multi.results.filter((r) => r.status !== "pass")
 
   if (failures.length === 0) {
-    console.log(chalk.green("\n  All agents passed. Nothing to diagnose.\n"))
+    console.log("All agents passed. Nothing to diagnose.")
     return
   }
 
@@ -64,19 +64,13 @@ export async function runDoctor(opts: {
 
   // 5. Diagnose each failure
   for (const failure of failures) {
-    console.log()
-    console.log(chalk.bold(`  Diagnosing: ${failure.agent}`))
-    console.log(
-      chalk.dim(
-        `  Status: ${failure.status} · Exit code: ${failure.execution.exitCode} · Duration: ${(failure.execution.duration / 1000).toFixed(1)}s`
-      )
-    )
-    console.log()
+    console.log(chalk.green("Diagnosing") + ` ${failure.agent}...`)
+    console.log(chalk.dim(`  status: ${failure.status}, exit code: ${failure.execution.exitCode}, ${(failure.execution.duration / 1000).toFixed(1)}s`))
 
     // Build diagnosis prompt
     const diagnosisPrompt = buildDiagnosisPrompt(failure, promptContent, multi)
 
-    console.log(chalk.dim("  Analyzing with " + analyzer.name + "..."))
+    console.log(chalk.dim(`  analyzing with ${analyzer.name}...`))
 
     const { createSandbox } = await import("../sandbox/manager.js")
     const sandbox = await createSandbox()
@@ -88,18 +82,16 @@ export async function runDoctor(opts: {
 
       if (result.stdout.trim()) {
         console.log()
-        console.log(chalk.bold("  Diagnosis:"))
         for (const line of result.stdout.trim().split("\n")) {
-          console.log(`  ${line}`)
+          console.log(line)
         }
       } else {
-        console.log(chalk.yellow("  No diagnosis output received."))
+        console.log(chalk.yellow("No diagnosis output received."))
       }
     } finally {
       await sandbox.destroy()
     }
 
-    console.log()
   }
 }
 

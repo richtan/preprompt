@@ -34,7 +34,7 @@ export async function runFix(opts: {
   const failures = multi.results.filter((r) => r.status !== "pass")
 
   if (failures.length === 0) {
-    console.log(chalk.green("\n  All agents passed. Nothing to fix.\n"))
+    console.log("All agents passed. Nothing to fix.")
     return
   }
 
@@ -70,9 +70,8 @@ export async function runFix(opts: {
   const analyzer = installed[0]
 
   // 5. Generate fix suggestions
-  console.log()
-  console.log(chalk.bold("  Generating fix suggestions..."))
-  console.log(chalk.dim(`  Analyzing with ${analyzer.name}`))
+  console.log(chalk.green("Generating") + " fix suggestions...")
+  console.log(chalk.dim(`  analyzing with ${analyzer.name}...`))
 
   const fixPrompt = buildFixPrompt(promptContent, failures, multi)
 
@@ -85,17 +84,14 @@ export async function runFix(opts: {
     })
 
     if (!result.stdout.trim()) {
-      console.log(chalk.yellow("\n  No fix suggestions received.\n"))
+      console.log(chalk.yellow("No fix suggestions received."))
       return
     }
 
     console.log()
-    console.log(chalk.bold("  Suggested fixes:"))
-    console.log()
-
     const output = result.stdout.trim()
     for (const line of output.split("\n")) {
-      console.log(`  ${line}`)
+      console.log(line)
     }
 
     // 6. Apply if requested
@@ -104,37 +100,18 @@ export async function runFix(opts: {
       const rewritten = extractRewrittenPrompt(output)
       if (rewritten) {
         await writeFile(promptPath, rewritten, "utf8")
-        console.log()
-        console.log(
-          chalk.green(`  Applied fix to ${multi.prompt}`)
-        )
-        console.log(
-          chalk.dim("  Run preprompt again to verify the fix works.")
-        )
+        console.log(chalk.green("Applied") + ` fix to ${multi.prompt}`)
+        console.log(chalk.dim("Run preprompt again to verify."))
       } else {
-        console.log()
-        console.log(
-          chalk.yellow(
-            "  Could not extract a rewritten prompt from the suggestions."
-          )
-        )
-        console.log(
-          chalk.dim("  Apply the suggested changes manually.")
-        )
+        console.log(chalk.yellow("Could not extract rewritten prompt from suggestions."))
+        console.log(chalk.dim("Apply the suggested changes manually."))
       }
     } else {
-      console.log()
-      console.log(
-        chalk.dim(
-          "  Run with --apply to apply the fix: preprompt fix --apply"
-        )
-      )
+      console.log(chalk.dim("Run with --apply to apply the fix: preprompt fix --apply"))
     }
   } finally {
     await sandbox.destroy()
   }
-
-  console.log()
 }
 
 function buildFixPrompt(
