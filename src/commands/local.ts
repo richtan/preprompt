@@ -10,16 +10,22 @@ import {
   renderError,
   renderWarning,
   renderAgentList,
+  renderCheckResults,
+  renderMatrixAnalysis,
 } from "../output/terminal.js"
 import { renderJson } from "../output/json.js"
 import { saveMultiResult } from "../storage.js"
 import { scanPrompt } from "../scanner.js"
+import { analyzePrompt } from "../matrix.js"
+import { parseInlineCheck, runChecks, allChecksPassed, type Check, type CheckResult } from "../checks.js"
 import type { RunResult, MultiRunResult } from "../types.js"
 
 export interface LocalOptions {
   timeout: number
   json: boolean
   agents?: string
+  check?: string[]
+  quiet?: boolean
 }
 
 export async function resolvePrompt(promptInput: string): Promise<{
@@ -120,6 +126,12 @@ export async function runLocal(
     )
   }
 
+  // 2b. Smart matrix analysis
+  const matrix = await analyzePrompt(promptContent)
+  if (!options.quiet) {
+    renderMatrixAnalysis(matrix)
+  }
+
   // 3. Detect agents
   const allAgents = await detectAgents()
   let installed = getInstalledAdapters(allAgents)
@@ -191,20 +203,51 @@ export async function runLocal(
   // 7. Save
   await saveMultiResult(multiResult)
 
-  // 8. Render
-  if (options.json) {
-    console.log(JSON.stringify(multiResult, null, 2))
-  } else if (runResults.length === 1) {
-    renderRunResult(runResults[0])
-  } else {
-    renderMultiRunSummary(multiResult)
+  // 8. Run checks if specified
+  const checks: Check[] = []
+  if (options.check) {
+    for (const raw of options.check) {
+      try {
+        checks.push(parseInlineCheck(raw))
+      } catch (e) {
+        renderError(`Invalid check: ${raw}`)
+        process.exitCode = 1
+        return
+      }
+    }
   }
 
-  // 9. Exit code: 1 if any agent failed
-  const anyFailed = runResults.some(
-    (r) => r.status === "fail" || r.status === "timeout" || r.status === "error"
-  )
-  if (anyFailed) {
-    process.exitCode = 1
+  let checkResults: CheckResult[] = []
+  if (checks.length > 0) {
+    for (const result of runResults) {
+      checkResults.push(...runChecks(checks, result))
+    }
+  }
+
+  // 9. Render
+  if (options.quiet) {
+    // Quiet mode: only exit code matters
+  } else if (options.json) {
+    const output = checks.length > 0
+      ? { ...multiResult, checks: checkResults }
+      : multiResult
+    console.log(JSON.stringify(output, null, 2))
+  } else if (runResults.length === 1) {
+    renderRunResult(runResults[0])
+    if (checkResults.length > 0) renderCheckResults(checkResults)
+  } else {
+    renderMultiRunSummary(multiResult)
+    if (checkResults.length > 0) renderCheckResults(checkResults)
+  }
+
+  // 10. Exit code
+  if (checks.length > 0) {
+    // In check mode, exit code is based on checks, not agent status
+    process.exitCode = allChecksPassed(checkResults) ? 0 : 1
+  } else {
+    const anyFailed = runResults.some(
+      (r) => r.status === "fail" || r.status === "timeout" || r.status === "error"
+    )
+    if (anyFailed) process.exitCode = 1
   }
 }

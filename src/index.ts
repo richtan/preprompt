@@ -18,19 +18,28 @@ program
   .description("Run a prompt using locally installed AI agents")
   .option("-t, --timeout <ms>", "Timeout per agent in milliseconds", "120000")
   .option("--json", "Output results as JSON", false)
+  .option("--quiet", "Suppress output, only set exit code (for CI)", false)
   .option(
     "--agents <names>",
     "Comma-separated list of agents to use (e.g. claude-code,codex)"
   )
+  .option(
+    "--check <assertion>",
+    "Assertion to verify (e.g. file-exists:package.json). Repeatable.",
+    (val: string, prev: string[]) => [...prev, val],
+    [] as string[]
+  )
   .action(
     async (
       prompt: string,
-      opts: { timeout: string; json: boolean; agents?: string }
+      opts: { timeout: string; json: boolean; quiet: boolean; agents?: string; check: string[] }
     ) => {
       await runLocal(prompt, {
         timeout: parseInt(opts.timeout, 10),
         json: opts.json,
+        quiet: opts.quiet,
         agents: opts.agents,
+        check: opts.check.length > 0 ? opts.check : undefined,
       })
     }
   )
@@ -99,14 +108,21 @@ program
   .argument("[prompt]", "Prompt file or text to test")
   .option("-t, --timeout <ms>", "Timeout per agent in milliseconds", "120000")
   .option("--json", "Output results as JSON", false)
+  .option("--quiet", "Suppress output, only set exit code (for CI)", false)
   .option(
     "--agents <names>",
     "Comma-separated list of agents to use (e.g. claude-code,codex)"
   )
+  .option(
+    "--check <assertion>",
+    "Assertion to verify (repeatable)",
+    (val: string, prev: string[]) => [...prev, val],
+    [] as string[]
+  )
   .action(
     async (
       prompt: string | undefined,
-      opts: { timeout: string; json: boolean; agents?: string }
+      opts: { timeout: string; json: boolean; quiet: boolean; agents?: string; check: string[] }
     ) => {
       if (!prompt) {
         program.help()
@@ -115,7 +131,9 @@ program
       await runLocal(prompt, {
         timeout: parseInt(opts.timeout, 10),
         json: opts.json,
+        quiet: opts.quiet,
         agents: opts.agents,
+        check: opts.check.length > 0 ? opts.check : undefined,
       })
     }
   )

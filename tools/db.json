@@ -1,0 +1,112 @@
+{
+  "tools": [
+    {
+      "name": "npm",
+      "patterns": ["\\bnpm\\b", "\\bnpm install\\b", "\\bnpm init\\b", "\\bnpm run\\b", "\\bnpx\\b"],
+      "related": ["yarn", "pnpm", "bun"],
+      "failures": ["npm:missing", "npm:no-node", "npm:old-version", "npm:registry-down", "npm:lock-mismatch"]
+    },
+    {
+      "name": "yarn",
+      "patterns": ["\\byarn\\b", "\\byarn add\\b", "\\byarn install\\b"],
+      "related": ["npm", "pnpm", "bun"],
+      "failures": ["yarn:missing", "yarn:no-node", "yarn:old-version"]
+    },
+    {
+      "name": "pnpm",
+      "patterns": ["\\bpnpm\\b", "\\bpnpm install\\b", "\\bpnpm add\\b"],
+      "related": ["npm", "yarn", "bun"],
+      "failures": ["pnpm:missing", "pnpm:no-node"]
+    },
+    {
+      "name": "bun",
+      "patterns": ["\\bbun\\b", "\\bbun install\\b", "\\bbun add\\b", "\\bbunx\\b"],
+      "related": ["npm", "yarn", "pnpm"],
+      "failures": ["bun:missing", "bun:old-version"]
+    },
+    {
+      "name": "node",
+      "patterns": ["\\bnode\\b", "\\bNode\\.js\\b", "\\bnodejs\\b"],
+      "related": [],
+      "failures": ["node:missing", "node:wrong-version"]
+    },
+    {
+      "name": "git",
+      "patterns": ["\\bgit\\b", "\\bgit init\\b", "\\bgit clone\\b", "\\bgit commit\\b", "\\.gitignore"],
+      "related": [],
+      "failures": ["git:missing", "git:not-configured", "git:no-remote"]
+    },
+    {
+      "name": "python",
+      "patterns": ["\\bpython\\b", "\\bpython3\\b", "\\bpip\\b", "\\bpip install\\b", "\\bpoetry\\b", "\\buv\\b"],
+      "related": [],
+      "failures": ["python:missing", "python:wrong-version", "pip:missing"]
+    },
+    {
+      "name": "docker",
+      "patterns": ["\\bdocker\\b", "\\bdocker-compose\\b", "\\bDockerfile\\b", "\\bdocker compose\\b"],
+      "related": [],
+      "failures": ["docker:missing", "docker:not-running", "docker:no-compose"]
+    },
+    {
+      "name": "gh",
+      "patterns": ["\\bgh\\b", "\\bgh pr\\b", "\\bgh repo\\b", "\\bgh copilot\\b", "\\bGitHub CLI\\b"],
+      "related": [],
+      "failures": ["gh:missing", "gh:not-authed", "gh:no-remote", "gh:rate-limited"]
+    },
+    {
+      "name": "vercel",
+      "patterns": ["\\bvercel\\b", "\\bvercel deploy\\b", "\\bvercel dev\\b", "\\bvercel link\\b"],
+      "related": [],
+      "failures": ["vercel:missing", "vercel:not-authed", "vercel:no-project"]
+    },
+    {
+      "name": "curl",
+      "patterns": ["\\bcurl\\b"],
+      "related": ["wget"],
+      "failures": ["curl:missing"]
+    },
+    {
+      "name": "wget",
+      "patterns": ["\\bwget\\b"],
+      "related": ["curl"],
+      "failures": ["wget:missing"]
+    },
+    {
+      "name": "make",
+      "patterns": ["\\bmake\\b", "\\bMakefile\\b"],
+      "related": [],
+      "failures": ["make:missing"]
+    },
+    {
+      "name": "cargo",
+      "patterns": ["\\bcargo\\b", "\\bCargo\\.toml\\b", "\\brustc\\b"],
+      "related": [],
+      "failures": ["cargo:missing", "rust:wrong-version"]
+    },
+    {
+      "name": "go",
+      "patterns": ["\\bgo\\b(?!\\s+to)", "\\bgo mod\\b", "\\bgo build\\b", "\\bgo\\.mod\\b"],
+      "related": [],
+      "failures": ["go:missing", "go:wrong-version"]
+    },
+    {
+      "name": "env",
+      "patterns": ["\\.env\\b", "\\bprocess\\.env\\b", "\\$[A-Z_]+", "\\benv var"],
+      "related": [],
+      "failures": ["env:missing-file", "env:missing-vars"]
+    },
+    {
+      "name": "typescript",
+      "patterns": ["\\btsc\\b", "\\btsconfig\\b", "\\bTypeScript\\b", "\\.ts\\b", "\\.tsx\\b"],
+      "related": [],
+      "failures": ["tsc:missing", "tsconfig:missing"]
+    },
+    {
+      "name": "next",
+      "patterns": ["\\bnext\\b", "\\bNext\\.js\\b", "\\bnextjs\\b", "\\bcreate-next-app\\b", "\\bnext\\.config\\b"],
+      "related": ["node", "npm"],
+      "failures": ["next:missing", "next:wrong-version"]
+    }
+  ]
+}

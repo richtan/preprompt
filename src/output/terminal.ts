@@ -1,6 +1,8 @@
 import chalk from "chalk"
 import Table from "cli-table3"
 import type { RunResult, MultiRunResult, AgentInfo } from "../types.js"
+import type { CheckResult, Check } from "../checks.js"
+import type { MatrixAnalysis } from "../matrix.js"
 
 export function renderAgentList(agents: AgentInfo[]): void {
   if (agents.length === 0) {
@@ -291,6 +293,53 @@ function renderDiffSummary(result: RunResult): void {
 function formatDuration(ms: number): string {
   if (ms < 1000) return `${ms}ms`
   return `${(ms / 1000).toFixed(1)}s`
+}
+
+export function renderCheckResults(results: CheckResult[]): void {
+  if (results.length === 0) return
+
+  console.log(chalk.bold("  Checks:"))
+
+  for (const r of results) {
+    const icon = r.passed ? chalk.green("✓") : chalk.red("✗")
+    const label = formatCheck(r.check)
+    const agentLabel = chalk.dim(`[${r.agent}]`)
+    console.log(`    ${icon} ${label} ${agentLabel} ${chalk.dim(r.message)}`)
+  }
+
+  const passed = results.filter((r) => r.passed).length
+  const total = results.length
+
+  console.log()
+  if (passed === total) {
+    console.log(chalk.green(`  All ${total} checks passed.`))
+  } else {
+    console.log(chalk.red(`  ${total - passed}/${total} checks failed.`))
+  }
+  console.log()
+}
+
+export function renderMatrixAnalysis(analysis: MatrixAnalysis): void {
+  if (analysis.detectedTools.length === 0) return
+
+  console.log(chalk.dim(`  Smart matrix: ${analysis.summary}`))
+}
+
+function formatCheck(check: Check): string {
+  switch (check.type) {
+    case "file-exists":
+      return `file-exists:${check.path}`
+    case "file-not-exists":
+      return `file-not-exists:${check.path}`
+    case "dir-exists":
+      return `dir-exists:${check.path}`
+    case "file-contains":
+      return `file-contains:${check.path}:${check.value ?? ""}`
+    case "exit-ok":
+      return "exit-ok"
+    default:
+      return String(check.type)
+  }
 }
 
 // Simple ANSI strip for comparison
