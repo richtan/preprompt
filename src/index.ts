@@ -8,6 +8,10 @@ import { loadLatestResult, listRuns, loadResult } from "./storage.js"
 import { renderTrace, renderTraceComparison } from "./trace.js"
 import { runDoctor } from "./commands/doctor.js"
 import { runFix } from "./commands/fix.js"
+import { runCompare, runCompareLatest } from "./commands/compare.js"
+import { runBadge } from "./commands/badge.js"
+import { runExplain } from "./commands/explain.js"
+import { generateZshCompletions } from "./completions.js"
 
 const program = new Command()
 
@@ -158,6 +162,42 @@ program
       apply: opts.apply,
       timeout: parseInt(opts.timeout, 10),
     })
+  })
+
+program
+  .command("compare [runA] [runB]")
+  .description(
+    "Compare two runs before/after. Defaults to the two most recent runs."
+  )
+  .action(async (runA?: string, runB?: string) => {
+    if (runA && runB) {
+      await runCompare(runA, runB)
+    } else {
+      await runCompareLatest()
+    }
+  })
+
+program
+  .command("badge")
+  .description("Generate an SVG compatibility badge from run results")
+  .option("--run <runId>", "Specify a run ID (defaults to latest)")
+  .option("-o, --output <path>", "Output file path", "pstack-badge.svg")
+  .action(async (opts: { run?: string; output: string }) => {
+    await runBadge({ run: opts.run, output: opts.output })
+  })
+
+program
+  .command("explain [agent]")
+  .description("Show agent behavior profiles, strengths, and quirks")
+  .action((agent?: string) => {
+    runExplain(agent)
+  })
+
+program
+  .command("completions")
+  .description("Generate zsh completions. Add to your .zshrc")
+  .action(() => {
+    console.log(generateZshCompletions())
   })
 
 program
