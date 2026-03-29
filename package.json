@@ -1,6 +1,6 @@
 {
   "name": "preprompt",
-  "version": "0.2.9",
+  "version": "0.2.10",
   "description": "Test any prompt on every AI tool. Run your CLAUDE.md, AGENTS.md, or any AI instruction through Claude Code, Codex, Aider, and more in parallel sandboxes. See exactly where agents diverge.",
   "type": "module",
   "bin": {
