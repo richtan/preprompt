@@ -65,6 +65,14 @@ npx vitest run
 - Smart matrix uses regex tool detection, no LLM dependency
 - Doctor/fix commands use a detected local agent for AI analysis
 
+## Publishing
+
+When pushing to main, always patch and publish:
+```bash
+npm version patch && git push && git push --tags
+```
+GitHub Actions publishes to npm automatically on tag push. Never push without patching.
+
 ## Package
 
 - npm: `preprompt`
