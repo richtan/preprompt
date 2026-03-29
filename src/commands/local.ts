@@ -94,11 +94,13 @@ function displayCriteria(criteria: Criterion[]): number {
     groups.get(g)!.push(c)
   }
   let lines = 0
+  let num = 1
   for (const [group, items] of groups) {
     console.log(`  ${chalk.bold(group)} ${chalk.dim(`(${items.length})`)}`)
     lines++
     for (const c of items) {
-      console.log(chalk.dim(`    ${c.number}. ${c.description}`))
+      console.log(chalk.dim(`    ${num}. ${c.description}`))
+      num++
       lines++
     }
   }

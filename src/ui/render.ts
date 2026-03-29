@@ -81,7 +81,7 @@ export function renderApp(): UIController {
         ? `${result.duration}ms`
         : `${(result.duration / 1000).toFixed(1)}s`
       const errorSuffix = result.error ? chalk.dim(`  ${result.error}`) : ""
-      const fileSuffix = result.fileSummary ? chalk.dim(`  ${result.fileSummary}`) : ""
+      const fileSuffix = ""
 
       state.completed = [
         ...state.completed,
