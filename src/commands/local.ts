@@ -94,13 +94,14 @@ function displayCriteria(criteria: Criterion[]): number {
     groups.get(g)!.push(c)
   }
   let lines = 0
-  let num = 1
+  let first = true
   for (const [group, items] of groups) {
+    if (!first) { console.log(""); lines++ }
+    first = false
     console.log(`  ${chalk.bold(group)} ${chalk.dim(`(${items.length})`)}`)
     lines++
     for (const c of items) {
-      console.log(chalk.dim(`    ${num}. ${c.description}`))
-      num++
+      console.log(chalk.dim(`    - ${c.description}`))
       lines++
     }
   }
@@ -354,18 +355,22 @@ async function runSingleAgent(
 }
 
 function cleanErrorNote(note: string): string {
-  // Take just the first meaningful line, skip stack frames and noise
   const lines = note.split("\n").map((l) => l.trim()).filter(Boolean)
   for (const line of lines) {
+    // Skip stack frames, carets, node internals, and generic throw lines
     if (line.startsWith("at ") || line.startsWith("^")) continue
-    if (line.startsWith("node:")) continue
+    if (line.startsWith("node:") || line === "throw err;") continue
+    if (line.startsWith("Error:") || line.startsWith("Module not found")) {
+      return line.length > 120 ? line.slice(0, 117) + "..." : line
+    }
+    // Skip lines that are just code fragments (short, no spaces)
+    if (line.length < 15 && !line.includes(" ")) continue
     return line.length > 120 ? line.slice(0, 117) + "..." : line
   }
   return lines[0]?.slice(0, 120) ?? note.slice(0, 120)
 }
 
 function renderEvalResults(evaluations: EvalResult[], ui: UIController): void {
-  // Score cards
   ui.addCompleted("")
   const maxNameLen = Math.max(...evaluations.map((e) => e.agent.length))
 
@@ -386,21 +391,12 @@ function renderEvalResults(evaluations: EvalResult[], ui: UIController): void {
     const failText = failed > 0 ? `  ${chalk.red(`${failed} failed`)}` : ""
 
     ui.addCompleted(`${icon} ${chalk.bold(name)}  ${score}  ${passText}${failText}`)
-  }
 
-  // Failures
-  const agentsWithFailures = evaluations.filter((e) =>
-    e.steps.some((s) => s.status === "fail")
-  )
-
-  if (agentsWithFailures.length > 0) {
-    ui.addCompleted("")
-    for (const evaluation of agentsWithFailures) {
-      for (const step of evaluation.steps) {
-        if (step.status !== "fail") continue
-        const note = step.note ? chalk.dim(` ${cleanErrorNote(step.note)}`) : ""
-        ui.addCompleted(`  ${chalk.red("●")} ${chalk.dim(evaluation.agent)} ${step.description}${note}`)
-      }
+    // Failures immediately under this agent's score line
+    for (const step of evaluation.steps) {
+      if (step.status !== "fail") continue
+      const note = step.note ? `  ${cleanErrorNote(step.note)}` : ""
+      ui.addCompleted(chalk.dim(`    ${chalk.red("●")} ${step.description}${note}`))
     }
   }
   ui.addCompleted("")
