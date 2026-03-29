@@ -18,7 +18,7 @@ import {
 import { saveMultiResult } from "../storage.js"
 import { scanPrompt } from "../scanner.js"
 import { analyzePrompt } from "../matrix.js"
-import { clearEvents, setStreamMode, emitFileChange, emitOverflowCount } from "../output/stream.js"
+import { clearEvents, setStreamMode } from "../output/stream.js"
 import { getErrorHint, extractErrorSummary } from "../errors.js"
 import { evaluateRun, pickEvaluator } from "../evaluate.js"
 import type { RunResult, MultiRunResult, EvalResult, Snapshot } from "../types.js"
@@ -64,17 +64,18 @@ async function runSingleAgent(
   promptContent: string,
   promptFile: string | null,
   timeout: number,
-  setStatus?: (status: string) => void
+  setStatus?: (status: string) => void,
+  setOutput?: (output: string) => void
 ): Promise<RunResult> {
   const sandbox = await createSandbox()
-  const agentName = adapter.name
 
   try {
     const before = await captureSnapshot(sandbox.dir)
 
     // Filesystem polling: check for new files every 2 seconds
+    // File changes accumulate in a list and render via tasuku setOutput
     let lastSnapshot: Snapshot = before
-    let filesEmitted = 0
+    const fileLines: string[] = []
     const poller = setInterval(async () => {
       try {
         const current = await captureSnapshot(sandbox.dir)
@@ -82,10 +83,10 @@ async function runSingleAgent(
         const topLevel = new Set<string>()
         for (const path of delta.added) {
           const top = path.split("/")[0]
-          if (!topLevel.has(top) && filesEmitted < MAX_VISIBLE_FILES) {
+          if (!topLevel.has(top) && fileLines.length < MAX_VISIBLE_FILES) {
             topLevel.add(top)
-            emitFileChange(agentName, path.includes("/") ? top + "/" : path)
-            filesEmitted++
+            fileLines.push(`+ ${path.includes("/") ? top + "/" : path}`)
+            if (setOutput) setOutput(fileLines.join("\n"))
           }
         }
         lastSnapshot = current
@@ -97,7 +98,6 @@ async function runSingleAgent(
       ? (line: string) => {
           const trimmed = line.trim()
           if (trimmed && trimmed.length > 0) {
-            // Truncate to terminal width for display, keep it readable
             const maxLen = (process.stderr.columns ?? 80) - 20
             setStatus(trimmed.length > maxLen ? trimmed.slice(0, maxLen) + "..." : trimmed)
           }
@@ -120,17 +120,19 @@ async function runSingleAgent(
     const topLevel = new Set<string>()
     for (const path of polledDelta.added) {
       const top = path.split("/")[0]
-      if (!topLevel.has(top) && filesEmitted < MAX_VISIBLE_FILES) {
+      if (!topLevel.has(top) && fileLines.length < MAX_VISIBLE_FILES) {
         topLevel.add(top)
-        emitFileChange(agentName, path.includes("/") ? top + "/" : path)
-        filesEmitted++
+        fileLines.push(`+ ${path.includes("/") ? top + "/" : path}`)
       }
     }
 
     const totalTopLevel = new Set(diff.added.map((p) => p.split("/")[0])).size
     if (totalTopLevel > MAX_VISIBLE_FILES) {
-      emitOverflowCount(totalTopLevel - MAX_VISIBLE_FILES)
+      fileLines.push(`... and ${totalTopLevel - MAX_VISIBLE_FILES} more`)
     }
+
+    // Final output update with all files
+    if (setOutput && fileLines.length > 0) setOutput(fileLines.join("\n"))
 
     const noChanges =
       diff.added.length === 0 &&
@@ -261,10 +263,10 @@ export async function runLocal(
     const execResults = await task.group(
       (create) =>
         installed.map((adapter) =>
-          create(adapter.name, async ({ setStatus, setTitle, setWarning, setError, startTime }) => {
+          create(adapter.name, async ({ setStatus, setOutput, setTitle, setWarning, setError, startTime }) => {
             startTime()
             const result = await runSingleAgent(
-              adapter, promptContent, promptFile, options.timeout, setStatus
+              adapter, promptContent, promptFile, options.timeout, setStatus, setOutput
             )
 
             // Update the task title with the result
