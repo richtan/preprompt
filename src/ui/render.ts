@@ -73,7 +73,7 @@ export function renderApp(): UIController {
       const icon = result.status === "pass" ? chalk.green("●")
         : result.status === "timeout" ? chalk.yellow("●")
         : chalk.red("●")
-      const statusText = result.status === "pass" ? color("passed")
+      const statusText = result.status === "pass" ? color("done")
         : result.status === "timeout" ? color("timed out")
         : result.status === "no-changes" ? color("no changes")
         : color("failed")
@@ -91,7 +91,7 @@ export function renderApp(): UIController {
             : h.type === "create" ? "create"
             : h.type === "edit" ? "edit"
             : "run"
-          return { key: String(keyCounter++), text: `    ${chalk.bold.dim(verb)} ${chalk.dim(h.text)}` }
+          return { key: String(keyCounter++), text: `    ${chalk.green("●")} ${verb} ${chalk.dim(h.text)}` }
         }),
       ]
 

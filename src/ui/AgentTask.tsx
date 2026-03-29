@@ -47,17 +47,26 @@ export default function AgentTask({ name, status, history, done, result }: Agent
     return () => clearInterval(timer)
   }, [done])
 
+  const past = history.slice(0, -1)
+  const current = history.length > 0 ? history[history.length - 1] : null
+
   return (
     <Box flexDirection="column">
       <Box>
         <Spinner />
         <Text> {name}</Text>
-        {status && <Text dimColor>  {status}</Text>}
         <Text dimColor>  ({formatDur(elapsed)})</Text>
       </Box>
-      {history.map((h, i) => (
-        <Text key={`h-${i}`} dimColor>    <Text bold>{historyVerb(h.type)}</Text> {h.text}</Text>
+      {past.map((h, i) => (
+        <Text key={`h-${i}`}>    <Text color="green">●</Text> {historyVerb(h.type)} <Text dimColor>{h.text}</Text></Text>
       ))}
+      {current && (
+        <Box>
+          <Text>    </Text>
+          <Spinner />
+          <Text> {historyVerb(current.type)} <Text dimColor>{current.text}</Text></Text>
+        </Box>
+      )}
     </Box>
   )
 }

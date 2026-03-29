@@ -291,9 +291,22 @@ async function runSingleAgent(
       }
     : undefined
 
+  // Resolve real path for stripping (macOS: /tmp → /private/var/folders/...)
+  const sandboxPaths = [sandbox.dir]
+  try {
+    const real = await import("node:fs").then((fs) => fs.realpathSync(sandbox.dir))
+    if (real !== sandbox.dir) sandboxPaths.push(real)
+  } catch {}
+
   const onAction = ui
     ? (type: ActionType, text: string) => {
-        ui.addAgentHistory(agentName, type, text)
+        let clean = text
+        for (const p of sandboxPaths) {
+          clean = clean.replaceAll(p + "/", "").replaceAll(p, ".")
+        }
+        // Use first line only for multi-line commands
+        const firstLine = clean.split("\n")[0]
+        ui.addAgentHistory(agentName, type, firstLine)
       }
     : undefined
 
@@ -371,32 +384,36 @@ function cleanErrorNote(note: string): string {
 }
 
 function renderEvalResults(evaluations: EvalResult[], ui: UIController): void {
-  ui.addCompleted("")
+  ui.addCompleted("\n" + chalk.dim("Results"))
   const maxNameLen = Math.max(...evaluations.map((e) => e.agent.length))
 
   for (const evaluation of evaluations) {
     const passed = evaluation.steps.filter((s) => s.status === "pass").length
     const failed = evaluation.steps.filter((s) => s.status === "fail").length
 
-    const scoreColor = evaluation.score >= 80 ? chalk.green
+    const hasFails = failed > 0
+    const scoreColor = hasFails ? chalk.red
+      : evaluation.score >= 80 ? chalk.green
       : evaluation.score >= 50 ? chalk.yellow
       : chalk.red
-    const icon = evaluation.score >= 80 ? chalk.green("●")
+    const icon = hasFails ? chalk.red("●")
+      : evaluation.score >= 80 ? chalk.green("●")
       : evaluation.score >= 50 ? chalk.yellow("●")
       : chalk.red("●")
 
     const name = evaluation.agent.padEnd(maxNameLen)
     const score = scoreColor(`${evaluation.score}/100`)
-    const passText = chalk.green(`${passed} passed`)
-    const failText = failed > 0 ? `  ${chalk.red(`${failed} failed`)}` : ""
+    const statusText = hasFails
+      ? chalk.red(`${failed} failed`)
+      : chalk.green(`${passed} passed`)
 
-    ui.addCompleted(`${icon} ${chalk.bold(name)}  ${score}  ${passText}${failText}`)
+    ui.addCompleted(`${icon} ${chalk.bold(name)}  ${score}  ${statusText}`)
 
     // Failures immediately under this agent's score line
     for (const step of evaluation.steps) {
       if (step.status !== "fail") continue
       const note = step.note ? `  ${cleanErrorNote(step.note)}` : ""
-      ui.addCompleted(chalk.dim(`    ${chalk.red("●")} ${step.description}${note}`))
+      ui.addCompleted(`    ${chalk.red("●")} ${chalk.dim(step.description + note)}`)
     }
   }
   ui.addCompleted("")
