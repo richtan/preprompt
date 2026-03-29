@@ -39,7 +39,7 @@ export const codex: AgentAdapter = {
     if (useStdin) {
       args[1] = "Follow the instructions from stdin"
     }
-    args.push("-C", workdir, "--full-auto")
+    args.push("-C", workdir, "--full-auto", "--skip-git-repo-check")
 
     try {
       const proc = execa("codex", args, {

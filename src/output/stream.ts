@@ -60,11 +60,10 @@ export function stopSpinner(): void {
 
 function printLine(line: string): void {
   if (activeSpinner) {
-    // Stop spinner, print line, restart spinner
-    const currentText = activeSpinner.text
+    // Clear spinner line, print output, restart same spinner
     activeSpinner.stop()
     console.error(line)
-    activeSpinner = yoctoSpinner({ text: currentText, stream: process.stderr }).start()
+    activeSpinner.start()
   } else {
     console.error(line)
   }

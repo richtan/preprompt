@@ -1,7 +1,7 @@
 const ERROR_HINTS: { pattern: RegExp; hint: string }[] = [
   {
     pattern: /not inside a trusted directory/i,
-    hint: "run from inside a git repo, or pass --skip-git-repo-check to codex",
+    hint: "codex requires a trusted directory. run from inside a git repo",
   },
   {
     pattern: /ENOENT.*claude/i,
