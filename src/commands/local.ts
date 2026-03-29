@@ -96,8 +96,10 @@ async function runSingleAgent(
     const onOutput = setStatus
       ? (line: string) => {
           const trimmed = line.trim()
-          if (trimmed && trimmed.length > 0 && trimmed.length < 100) {
-            setStatus(trimmed)
+          if (trimmed && trimmed.length > 0) {
+            // Truncate to terminal width for display, keep it readable
+            const maxLen = (process.stderr.columns ?? 80) - 20
+            setStatus(trimmed.length > maxLen ? trimmed.slice(0, maxLen) + "..." : trimmed)
           }
         }
       : undefined
@@ -177,19 +179,27 @@ export async function runLocal(
   }
 
   // 2. Detect agents
-  const detectionResult = await task("Detecting agents", async ({ setTitle }) => {
-    const allAgents = await detectAgents()
-    const installed = getInstalledAdapters(allAgents)
-    const names = installed.map((a) => a.name).join(", ")
-    setTitle(installed.length > 0
-      ? `${installed.length} agent${installed.length === 1 ? "" : "s"} detected (${names})`
-      : "No agents detected"
-    )
-    return { allAgents, installed }
-  })
+  const showProgress = !options.json && !options.quiet
+  let installed: AgentAdapter[]
+  let allAgents: Awaited<ReturnType<typeof detectAgents>>
 
-  let installed = detectionResult.result.installed
-  const allAgents = detectionResult.result.allAgents
+  if (showProgress) {
+    const detectionResult = await task("Detecting agents", async ({ setTitle }) => {
+      const agents = await detectAgents()
+      const inst = getInstalledAdapters(agents)
+      const names = inst.map((a) => a.name).join(", ")
+      setTitle(inst.length > 0
+        ? `${inst.length} agent${inst.length === 1 ? "" : "s"} detected (${names})`
+        : "No agents detected"
+      )
+      return { allAgents: agents, installed: inst }
+    })
+    installed = detectionResult.result.installed
+    allAgents = detectionResult.result.allAgents
+  } else {
+    allAgents = await detectAgents()
+    installed = getInstalledAdapters(allAgents)
+  }
 
   if (installed.length === 0) {
     renderAgentList(allAgents)
@@ -208,15 +218,18 @@ export async function runLocal(
   }
 
   // 2c. Smart matrix analysis
-  const analysisResult = await task("Analyzing prompt", async ({ setTitle }) => {
-    const matrix = await analyzePrompt(promptContent)
-    if (matrix.detectedTools.length > 0) {
-      setTitle(`${matrix.detectedTools.length} tools detected (${matrix.detectedTools.join(", ")})`)
-    } else {
-      setTitle("Prompt analyzed")
-    }
-    return matrix
-  })
+  if (showProgress) {
+    await task("Analyzing prompt", async ({ setTitle }) => {
+      const matrix = await analyzePrompt(promptContent)
+      if (matrix.detectedTools.length > 0) {
+        setTitle(`${matrix.detectedTools.length} tools detected (${matrix.detectedTools.join(", ")})`)
+      } else {
+        setTitle("Prompt analyzed")
+      }
+    })
+  } else {
+    await analyzePrompt(promptContent)
+  }
 
   // 3. Filter agents
   if (options.agents) {
@@ -248,7 +261,8 @@ export async function runLocal(
     const execResults = await task.group(
       (create) =>
         installed.map((adapter) =>
-          create(adapter.name, async ({ setStatus, setTitle, setWarning, setError }) => {
+          create(adapter.name, async ({ setStatus, setTitle, setWarning, setError, startTime }) => {
+            startTime()
             const result = await runSingleAgent(
               adapter, promptContent, promptFile, options.timeout, setStatus
             )
