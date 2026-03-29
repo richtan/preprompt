@@ -1,4 +1,5 @@
 import chalk from "chalk"
+import yoctoSpinner from "yocto-spinner"
 
 export interface StreamEvent {
   agent: string
@@ -9,12 +10,64 @@ export interface StreamEvent {
 
 let multiMode = false
 let maxAgentWidth = 0
+let activeSpinner: ReturnType<typeof yoctoSpinner> | null = null
+let spinnerStart = 0
+let spinnerTimer: ReturnType<typeof setInterval> | null = null
+let agentCount = 0
+let doneCount = 0
+let isTTY = process.stderr.isTTY ?? false
 
 export function setStreamMode(multi: boolean, agentNames: string[] = []): void {
   multiMode = multi
   maxAgentWidth = agentNames.length > 0
     ? Math.max(...agentNames.map((n) => n.length))
     : 0
+  agentCount = agentNames.length
+  doneCount = 0
+  isTTY = process.stderr.isTTY ?? false
+}
+
+export function startExecutionSpinner(label: string): void {
+  spinnerStart = Date.now()
+
+  if (!isTTY) {
+    // Non-TTY: just print a static line
+    console.error(label)
+    return
+  }
+
+  activeSpinner = yoctoSpinner({ text: label, stream: process.stderr }).start()
+
+  // Update elapsed time every 100ms
+  spinnerTimer = setInterval(() => {
+    if (activeSpinner) {
+      const elapsed = ((Date.now() - spinnerStart) / 1000).toFixed(1)
+      activeSpinner.text = `${label} ${chalk.dim(elapsed + "s")}`
+    }
+  }, 100)
+}
+
+export function stopSpinner(): void {
+  if (spinnerTimer) {
+    clearInterval(spinnerTimer)
+    spinnerTimer = null
+  }
+  if (activeSpinner) {
+    activeSpinner.stop()
+    activeSpinner = null
+  }
+}
+
+function printLine(line: string): void {
+  if (activeSpinner) {
+    // Stop spinner, print line, restart spinner
+    const currentText = activeSpinner.text
+    activeSpinner.stop()
+    console.error(line)
+    activeSpinner = yoctoSpinner({ text: currentText, stream: process.stderr }).start()
+  } else {
+    console.error(line)
+  }
 }
 
 export function emitEvent(event: StreamEvent): void {
@@ -24,17 +77,15 @@ export function emitEvent(event: StreamEvent): void {
 
   switch (event.type) {
     case "start":
-      if (multiMode) {
-        console.log(prefix + chalk.dim("starting..."))
-      }
+      // Suppressed. The spinner handles the "running" state.
       break
 
     case "command":
-      console.log(prefix + chalk.bold("> ") + event.content)
+      printLine(prefix + chalk.bold("> ") + event.content)
       break
 
     case "file":
-      console.log(prefix + chalk.green("+ ") + event.content)
+      printLine(prefix + chalk.green("+ ") + event.content)
       break
 
     case "stdout": {
@@ -45,7 +96,7 @@ export function emitEvent(event: StreamEvent): void {
       }
       const trimmed = event.content.trim()
       if (trimmed && !isNoise(trimmed)) {
-        console.log(prefix + chalk.dim(truncate(trimmed, 120)))
+        printLine(prefix + chalk.dim(truncate(trimmed, 120)))
       }
       break
     }
@@ -53,17 +104,24 @@ export function emitEvent(event: StreamEvent): void {
     case "stderr": {
       const trimmed = event.content.trim()
       if (trimmed && !isNoise(trimmed)) {
-        console.log(prefix + chalk.dim(trimmed))
+        printLine(prefix + chalk.dim(trimmed))
       }
       break
     }
 
-    case "done":
-      console.log(prefix + event.content)
+    case "done": {
+      doneCount++
+      printLine(event.content)
+
+      // If all agents done, stop the spinner
+      if (doneCount >= agentCount) {
+        stopSpinner()
+      }
       break
+    }
 
     case "error":
-      console.log(prefix + chalk.red(event.content))
+      printLine(prefix + chalk.red(event.content))
       break
   }
 }
@@ -99,6 +157,9 @@ function truncate(str: string, max: number): string {
 }
 
 export function clearEvents(): void {
+  stopSpinner()
   multiMode = false
   maxAgentWidth = 0
+  agentCount = 0
+  doneCount = 0
 }

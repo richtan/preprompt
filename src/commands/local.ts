@@ -19,7 +19,8 @@ import { saveMultiResult } from "../storage.js"
 import { scanPrompt } from "../scanner.js"
 import { analyzePrompt } from "../matrix.js"
 import { parseInlineCheck, runChecks, allChecksPassed, type Check, type CheckResult } from "../checks.js"
-import { emitEvent, clearEvents, setStreamMode } from "../output/stream.js"
+import { emitEvent, clearEvents, setStreamMode, startExecutionSpinner, stopSpinner } from "../output/stream.js"
+import { getErrorHint, extractErrorSummary } from "../errors.js"
 import type { RunResult, MultiRunResult } from "../types.js"
 
 export interface LocalOptions {
@@ -62,37 +63,14 @@ async function runSingleAgent(
   promptContent: string,
   promptFile: string | null,
   timeout: number,
-  streaming: boolean = false
+  streaming: boolean = false,
+  multiMode: boolean = false
 ): Promise<RunResult> {
   const sandbox = await createSandbox()
   const agentName = adapter.name
 
   try {
-    if (streaming) {
-      emitEvent({
-        agent: agentName,
-        type: "start",
-        content: "Starting...",
-        timestamp: Date.now(),
-      })
-    }
-
     const before = await captureSnapshot(sandbox.dir)
-
-    // Heartbeat: show elapsed time every 10s so the user knows it's alive
-    let heartbeat: ReturnType<typeof setInterval> | null = null
-    const startTime = Date.now()
-    if (streaming) {
-      heartbeat = setInterval(() => {
-        const elapsed = Math.round((Date.now() - startTime) / 1000)
-        emitEvent({
-          agent: agentName,
-          type: "stdout",
-          content: `(${elapsed}s)`,
-          timestamp: Date.now(),
-        })
-      }, 10_000)
-    }
 
     // Stream output in real time via onOutput callback
     const onOutput = streaming
@@ -111,8 +89,6 @@ async function runSingleAgent(
       sandbox.dir,
       { timeout, onOutput }
     )
-
-    if (heartbeat) clearInterval(heartbeat)
 
     const after = await captureSnapshot(sandbox.dir)
     const diff = diffSnapshots(before, after)
@@ -139,15 +115,22 @@ async function runSingleAgent(
     if (streaming) {
       const dur = formatDur(execution.duration)
       const files = diff.added.length
+      const prefix = multiMode
+        ? agentName.padEnd(14)
+        : ""
       let content: string
       if (status === "pass") {
-        content = chalk.green("passed") + ` in ${dur}` + chalk.dim(` (${files} files)`)
+        content = chalk.green("v") + ` ${prefix}${chalk.green("passed")}  ${dur}  ${files} files`
       } else if (status === "timeout") {
-        content = chalk.yellow("timed out") + ` after ${dur}`
+        content = chalk.yellow("~") + ` ${prefix}${chalk.yellow("timed out")}  ${dur}`
       } else if (status === "no-changes") {
-        content = chalk.yellow("no changes") + ` in ${dur}`
+        content = chalk.yellow("~") + ` ${prefix}${chalk.yellow("no changes")}  ${dur}`
       } else {
-        content = chalk.red("failed") + chalk.dim(` (exit code ${execution.exitCode}, ${dur})`)
+        const errSummary = extractErrorSummary(execution.stderr)
+        const hint = getErrorHint(execution.stderr)
+        content = chalk.red("x") + ` ${prefix}${chalk.red("failed")}  ${dur}`
+        if (errSummary) content += `  ${chalk.dim(errSummary)}`
+        if (hint) content += `\n  ${chalk.dim("hint: " + hint)}`
       }
       emitEvent({ agent: agentName, type: "done", content, timestamp: Date.now() })
     }
@@ -182,7 +165,22 @@ export async function runLocal(
     return
   }
 
-  // 2. Scan for destructive patterns
+  // 2. Detect agents (with spinner)
+  const showProgress = !options.json && !options.quiet
+  if (showProgress) startExecutionSpinner("Detecting agents...")
+
+  const allAgents = await detectAgents()
+  let installed = getInstalledAdapters(allAgents)
+
+  if (showProgress) {
+    stopSpinner()
+    const names = installed.map((a) => a.name).join(", ")
+    if (installed.length > 0) {
+      console.log(chalk.green("+") + ` ${installed.length} agent${installed.length === 1 ? "" : "s"} detected` + chalk.dim(` (${names})`))
+    }
+  }
+
+  // 2b. Scan for destructive patterns
   const scan = scanPrompt(promptContent)
   if (!scan.safe) {
     renderWarning(
@@ -192,15 +190,13 @@ export async function runLocal(
     )
   }
 
-  // 2b. Smart matrix analysis
+  // 2c. Smart matrix analysis
+  if (showProgress) startExecutionSpinner("Analyzing prompt...")
   const matrix = await analyzePrompt(promptContent)
-  if (!options.quiet) {
+  if (showProgress) {
+    stopSpinner()
     renderMatrixAnalysis(matrix)
   }
-
-  // 3. Detect agents
-  const allAgents = await detectAgents()
-  let installed = getInstalledAdapters(allAgents)
 
   if (installed.length === 0) {
     renderAgentList(allAgents)
@@ -225,22 +221,27 @@ export async function runLocal(
 
   // 5. Run all agents in parallel
   const streaming = !options.json && !options.quiet
+  const multi = installed.length > 1
   if (streaming) {
     clearEvents()
     const agentNames = installed.map((a) => a.name)
-    setStreamMode(installed.length > 1, agentNames)
-    if (installed.length === 1) {
-      console.log(chalk.green("Running") + ` ${installed[0].name}...`)
-    } else {
-      console.log(chalk.green("Running") + ` ${installed.length} agents in parallel...`)
-    }
+    setStreamMode(multi, agentNames)
+
+    // Start the execution spinner
+    const spinnerLabel = multi
+      ? `Running ${installed.length} agents in parallel...`
+      : `Running ${installed[0].name}...`
+    startExecutionSpinner(spinnerLabel)
   }
 
   const results = await Promise.allSettled(
     installed.map((adapter) =>
-      runSingleAgent(adapter, promptContent, promptFile, options.timeout, streaming)
+      runSingleAgent(adapter, promptContent, promptFile, options.timeout, streaming, multi)
     )
   )
+
+  // Ensure spinner is stopped
+  if (streaming) stopSpinner()
 
   const runResults: RunResult[] = results
     .filter(
