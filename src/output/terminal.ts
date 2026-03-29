@@ -124,18 +124,27 @@ export function renderDiff(multi: MultiRunResult): void {
 }
 
 export function renderEvalResult(evalResult: EvalResult): void {
-  for (const step of evalResult.steps) {
-    const icon = step.status === "pass" ? chalk.green("pass")
-      : step.status === "partial" ? chalk.yellow("part")
-      : chalk.red("fail")
-    const note = step.note && step.status !== "pass" ? chalk.dim(`  ${step.note}`) : ""
-    console.log(`  ${step.number}. ${step.description.padEnd(30)} ${icon}${note}`)
-  }
-
   const passed = evalResult.steps.filter((s) => s.status === "pass").length
   const total = evalResult.steps.length
   const self = evalResult.agent === evalResult.evaluator ? chalk.dim(" (self-eval)") : ""
-  console.log(`${evalResult.agent}  ${evalResult.score}/100  ${passed}/${total} steps${self}`)
+
+  // Score line: always shown
+  const scoreColor = evalResult.score >= 80 ? chalk.green
+    : evalResult.score >= 50 ? chalk.yellow
+    : chalk.red
+  console.log(`${evalResult.agent}  ${scoreColor(evalResult.score + "/100")}  ${passed}/${total} steps${self}`)
+
+  // Failed/partial steps only: show what went wrong
+  const failures = evalResult.steps.filter((s) => s.status !== "pass")
+  if (failures.length > 0) {
+    for (const step of failures) {
+      const icon = step.status === "partial" ? chalk.yellow("~") : chalk.red("x")
+      const desc = step.description.length > 50
+        ? step.description.slice(0, 47) + "..."
+        : step.description
+      console.log(`  ${icon} ${desc}`)
+    }
+  }
 }
 
 export function renderError(message: string): void {
