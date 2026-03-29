@@ -1,6 +1,7 @@
 import chalk from "chalk"
 import { readFile, access } from "node:fs/promises"
 import { resolve } from "node:path"
+import task from "tasuku"
 import { detectAgents, getInstalledAdapters } from "../agents/detector.js"
 import type { AgentAdapter } from "../agents/types.js"
 import { createSandbox } from "../sandbox/manager.js"
@@ -17,10 +18,7 @@ import {
 import { saveMultiResult } from "../storage.js"
 import { scanPrompt } from "../scanner.js"
 import { analyzePrompt } from "../matrix.js"
-import {
-  clearEvents, setStreamMode, startExecutionSpinner, stopSpinner,
-  emitFileChange, emitOverflowCount, emitDone, printLine,
-} from "../output/stream.js"
+import { clearEvents, setStreamMode, emitFileChange, emitOverflowCount } from "../output/stream.js"
 import { getErrorHint, extractErrorSummary } from "../errors.js"
 import { evaluateRun, pickEvaluator } from "../evaluate.js"
 import type { RunResult, MultiRunResult, EvalResult, Snapshot } from "../types.js"
@@ -66,8 +64,7 @@ async function runSingleAgent(
   promptContent: string,
   promptFile: string | null,
   timeout: number,
-  streaming: boolean = false,
-  multiMode: boolean = false
+  setStatus?: (status: string) => void
 ): Promise<RunResult> {
   const sandbox = await createSandbox()
   const agentName = adapter.name
@@ -75,69 +72,62 @@ async function runSingleAgent(
   try {
     const before = await captureSnapshot(sandbox.dir)
 
-    // Filesystem polling: check for new files every 2 seconds during execution
+    // Filesystem polling: check for new files every 2 seconds
     let lastSnapshot: Snapshot = before
     let filesEmitted = 0
-    let poller: ReturnType<typeof setInterval> | null = null
-
-    if (streaming) {
-      poller = setInterval(async () => {
-        try {
-          const current = await captureSnapshot(sandbox.dir)
-          const delta = diffSnapshots(lastSnapshot, current)
-
-          // Only show top-level entries (files/dirs at root, not nested contents)
-          const topLevel = new Set<string>()
-          for (const path of delta.added) {
-            const top = path.split("/")[0]
-            if (!topLevel.has(top)) {
-              topLevel.add(top)
-              if (filesEmitted < MAX_VISIBLE_FILES) {
-                emitFileChange(agentName, path.includes("/") ? top + "/" : path, "added")
-                filesEmitted++
-              }
-            }
+    const poller = setInterval(async () => {
+      try {
+        const current = await captureSnapshot(sandbox.dir)
+        const delta = diffSnapshots(lastSnapshot, current)
+        const topLevel = new Set<string>()
+        for (const path of delta.added) {
+          const top = path.split("/")[0]
+          if (!topLevel.has(top) && filesEmitted < MAX_VISIBLE_FILES) {
+            topLevel.add(top)
+            emitFileChange(agentName, path.includes("/") ? top + "/" : path)
+            filesEmitted++
           }
-
-          lastSnapshot = current
-        } catch {
-          // Sandbox may be gone if agent finished fast
         }
-      }, 2000)
-    }
+        lastSnapshot = current
+      } catch { /* sandbox may be gone */ }
+    }, 2000)
+
+    // onOutput: update the tasuku status with the last meaningful stdout line
+    const onOutput = setStatus
+      ? (line: string) => {
+          const trimmed = line.trim()
+          if (trimmed && trimmed.length > 0 && trimmed.length < 100) {
+            setStatus(trimmed)
+          }
+        }
+      : undefined
 
     const execution = await adapter.execute(
       `Follow these instructions exactly in the current directory:\n\n${promptContent}`,
       sandbox.dir,
-      { timeout }
+      { timeout, onOutput }
     )
 
-    // Stop polling
-    if (poller) clearInterval(poller)
+    clearInterval(poller)
 
     const after = await captureSnapshot(sandbox.dir)
     const diff = diffSnapshots(before, after)
 
-    // Emit any remaining file changes that polling missed
-    if (streaming) {
-      const polledDelta = diffSnapshots(lastSnapshot, after)
-      const topLevel = new Set<string>()
-      for (const path of polledDelta.added) {
-        const top = path.split("/")[0]
-        if (!topLevel.has(top)) {
-          topLevel.add(top)
-          if (filesEmitted < MAX_VISIBLE_FILES) {
-            emitFileChange(agentName, path.includes("/") ? top + "/" : path, "added")
-            filesEmitted++
-          }
-        }
+    // Emit remaining file changes that polling missed
+    const polledDelta = diffSnapshots(lastSnapshot, after)
+    const topLevel = new Set<string>()
+    for (const path of polledDelta.added) {
+      const top = path.split("/")[0]
+      if (!topLevel.has(top) && filesEmitted < MAX_VISIBLE_FILES) {
+        topLevel.add(top)
+        emitFileChange(agentName, path.includes("/") ? top + "/" : path)
+        filesEmitted++
       }
+    }
 
-      // Show overflow count
-      const totalTopLevel = new Set(diff.added.map((p) => p.split("/")[0])).size
-      if (totalTopLevel > MAX_VISIBLE_FILES) {
-        emitOverflowCount(totalTopLevel - MAX_VISIBLE_FILES)
-      }
+    const totalTopLevel = new Set(diff.added.map((p) => p.split("/")[0])).size
+    if (totalTopLevel > MAX_VISIBLE_FILES) {
+      emitOverflowCount(totalTopLevel - MAX_VISIBLE_FILES)
     }
 
     const noChanges =
@@ -154,27 +144,6 @@ async function runSingleAgent(
       status = "no-changes"
     } else {
       status = "pass"
-    }
-
-    if (streaming) {
-      const dur = formatDur(execution.duration)
-      const files = new Set(diff.added.map((p) => p.split("/")[0])).size
-      const prefix = multiMode ? agentName.padEnd(14) : ""
-      let content: string
-      if (status === "pass") {
-        content = chalk.green("v") + ` ${prefix}${chalk.green("passed")}  ${dur}  ${files} files`
-      } else if (status === "timeout") {
-        content = chalk.yellow("~") + ` ${prefix}${chalk.yellow("timed out")}  ${dur}`
-      } else if (status === "no-changes") {
-        content = chalk.yellow("~") + ` ${prefix}${chalk.yellow("no changes")}  ${dur}`
-      } else {
-        const errSummary = extractErrorSummary(execution.stderr)
-        const hint = getErrorHint(execution.stderr)
-        content = chalk.red("x") + ` ${prefix}${chalk.red("failed")}  ${dur}`
-        if (errSummary) content += `  ${chalk.dim(errSummary)}`
-        if (hint) content += `\n  ${chalk.dim("hint: " + hint)}`
-      }
-      emitDone(content)
     }
 
     return {
@@ -207,20 +176,20 @@ export async function runLocal(
     return
   }
 
-  // 2. Detect agents (with spinner)
-  const showProgress = !options.json && !options.quiet
-  if (showProgress) startExecutionSpinner("Detecting agents...")
-
-  const allAgents = await detectAgents()
-  let installed = getInstalledAdapters(allAgents)
-
-  if (showProgress) {
-    stopSpinner()
+  // 2. Detect agents
+  const detectionResult = await task("Detecting agents", async ({ setTitle }) => {
+    const allAgents = await detectAgents()
+    const installed = getInstalledAdapters(allAgents)
     const names = installed.map((a) => a.name).join(", ")
-    if (installed.length > 0) {
-      console.log(chalk.green("+") + ` ${installed.length} agent${installed.length === 1 ? "" : "s"} detected` + chalk.dim(` (${names})`))
-    }
-  }
+    setTitle(installed.length > 0
+      ? `${installed.length} agent${installed.length === 1 ? "" : "s"} detected (${names})`
+      : "No agents detected"
+    )
+    return { allAgents, installed }
+  })
+
+  let installed = detectionResult.result.installed
+  const allAgents = detectionResult.result.allAgents
 
   if (installed.length === 0) {
     renderAgentList(allAgents)
@@ -239,14 +208,17 @@ export async function runLocal(
   }
 
   // 2c. Smart matrix analysis
-  if (showProgress) startExecutionSpinner("Analyzing prompt...")
-  const matrix = await analyzePrompt(promptContent)
-  if (showProgress) {
-    stopSpinner()
-    renderMatrixAnalysis(matrix)
-  }
+  const analysisResult = await task("Analyzing prompt", async ({ setTitle }) => {
+    const matrix = await analyzePrompt(promptContent)
+    if (matrix.detectedTools.length > 0) {
+      setTitle(`${matrix.detectedTools.length} tools detected (${matrix.detectedTools.join(", ")})`)
+    } else {
+      setTitle("Prompt analyzed")
+    }
+    return matrix
+  })
 
-  // 3. Filter agents if --agents flag is set
+  // 3. Filter agents
   if (options.agents) {
     const requested = options.agents.split(",").map((s) => s.trim())
     const filtered = installed.filter((a) => requested.includes(a.name))
@@ -261,83 +233,102 @@ export async function runLocal(
     installed = filtered
   }
 
-  // 4. Run all agents in parallel
+  // 4. Run all agents in parallel using tasuku
   const streaming = !options.json && !options.quiet
   const multi = installed.length > 1
+
   if (streaming) {
     clearEvents()
-    const agentNames = installed.map((a) => a.name)
-    setStreamMode(multi, agentNames)
-
-    const spinnerLabel = multi
-      ? `Running ${installed.length} agents in parallel...`
-      : `Running ${installed[0].name}...`
-    startExecutionSpinner(spinnerLabel)
+    setStreamMode(multi, installed.map((a) => a.name))
   }
 
-  const results = await Promise.allSettled(
-    installed.map((adapter) =>
-      runSingleAgent(adapter, promptContent, promptFile, options.timeout, streaming, multi)
+  let runResults: RunResult[]
+
+  if (streaming) {
+    const execResults = await task.group(
+      (create) =>
+        installed.map((adapter) =>
+          create(adapter.name, async ({ setStatus, setTitle, setWarning, setError }) => {
+            const result = await runSingleAgent(
+              adapter, promptContent, promptFile, options.timeout, setStatus
+            )
+
+            // Update the task title with the result
+            const dur = formatDur(result.execution.duration)
+            const files = new Set(result.diff.added.map((p) => p.split("/")[0])).size
+            if (result.status === "pass") {
+              setTitle(`${adapter.name}  passed  ${dur}  ${files} files`)
+            } else if (result.status === "timeout") {
+              setTitle(`${adapter.name}  timed out  ${dur}`)
+              setWarning("timed out")
+            } else if (result.status === "no-changes") {
+              setTitle(`${adapter.name}  no changes  ${dur}`)
+              setWarning("no changes")
+            } else {
+              const errSummary = extractErrorSummary(result.execution.stderr)
+              const hint = getErrorHint(result.execution.stderr)
+              setTitle(`${adapter.name}  failed  ${dur}`)
+              setError(errSummary ?? `exit code ${result.execution.exitCode}`)
+            }
+
+            return result
+          })
+        ),
+      { concurrency: Infinity, stopOnError: false }
     )
-  )
 
-  if (streaming) stopSpinner()
-
-  const runResults: RunResult[] = results
-    .filter(
-      (r): r is PromiseFulfilledResult<RunResult> => r.status === "fulfilled"
+    runResults = execResults.map((r) => r.result)
+  } else {
+    // Non-streaming: direct execution
+    const results = await Promise.allSettled(
+      installed.map((adapter) =>
+        runSingleAgent(adapter, promptContent, promptFile, options.timeout)
+      )
     )
-    .map((r) => r.value)
 
-  // Include errors as failed results
-  for (let i = 0; i < results.length; i++) {
-    const r = results[i]
-    if (r.status === "rejected") {
-      runResults.push({
-        agent: installed[i].name,
-        prompt: promptFile ?? "(inline)",
-        workdir: "",
-        execution: {
-          exitCode: 1,
-          stdout: "",
-          stderr: r.reason instanceof Error ? r.reason.message : String(r.reason),
-          duration: 0,
-        },
-        before: { files: [], timestamp: 0 },
-        after: { files: [], timestamp: 0 },
-        diff: { added: [], modified: [], deleted: [] },
-        status: "error",
-        timestamp: Date.now(),
-      })
+    runResults = results
+      .filter((r): r is PromiseFulfilledResult<RunResult> => r.status === "fulfilled")
+      .map((r) => r.value)
+
+    for (let i = 0; i < results.length; i++) {
+      const r = results[i]
+      if (r.status === "rejected") {
+        runResults.push({
+          agent: installed[i].name,
+          prompt: promptFile ?? "(inline)",
+          workdir: "",
+          execution: { exitCode: 1, stdout: "", stderr: r.reason instanceof Error ? r.reason.message : String(r.reason), duration: 0 },
+          before: { files: [], timestamp: 0 },
+          after: { files: [], timestamp: 0 },
+          diff: { added: [], modified: [], deleted: [] },
+          status: "error",
+          timestamp: Date.now(),
+        })
+      }
     }
   }
 
   // 5. AI Behavioral Evaluation
   const evaluations: EvalResult[] = []
 
-  if (!options.quiet) {
+  if (!options.quiet && !options.json) {
     for (const result of runResults) {
       const evaluator = pickEvaluator(result.agent, installed)
       if (!evaluator) continue
 
-      if (streaming) {
-        const self = evaluator.name === result.agent ? " (self)" : ""
-        startExecutionSpinner(`Evaluating ${result.agent} with ${evaluator.name}${self}...`)
-      }
+      const self = evaluator.name === result.agent ? " (self)" : ""
 
       try {
-        const evalResult = await evaluateRun(promptContent, result, evaluator)
-        evaluations.push(evalResult)
+        const evalResult = await task(
+          `Evaluating ${result.agent} with ${evaluator.name}${self}`,
+          async ({ setStatus }) => {
+            return evaluateRun(promptContent, result, evaluator)
+          }
+        )
+        evaluations.push(evalResult.result)
+        renderEvalResult(evalResult.result)
       } catch {
-        // Evaluation failed, continue without it
-      }
-
-      if (streaming) stopSpinner()
-
-      // Render evaluation inline
-      if (streaming && evaluations.length > 0) {
-        const latest = evaluations[evaluations.length - 1]
-        renderEvalResult(latest)
+        // Evaluation failed, continue
       }
     }
   }
@@ -358,21 +349,17 @@ export async function runLocal(
     // Quiet mode: only exit code matters
   } else if (options.json) {
     console.log(JSON.stringify(multiResult, null, 2))
-  } else if (streaming) {
-    // Streaming already showed per-agent results + evaluations live.
-    // Just print the summary.
-    if (runResults.length > 1) {
-      console.log()
-      const passed = runResults.filter((r) => r.status === "pass").length
-      const failed = runResults.filter((r) => r.status === "fail" || r.status === "error").length
-      const other = runResults.length - passed - failed
-      const parts: string[] = []
-      if (passed > 0) parts.push(`${passed} passed`)
-      if (failed > 0) parts.push(`${failed} failed`)
-      if (other > 0) parts.push(`${other} other`)
-      console.log(parts.join(", "))
-    }
-  } else {
+  } else if (streaming && runResults.length > 1) {
+    console.log()
+    const passed = runResults.filter((r) => r.status === "pass").length
+    const failed = runResults.filter((r) => r.status === "fail" || r.status === "error").length
+    const other = runResults.length - passed - failed
+    const parts: string[] = []
+    if (passed > 0) parts.push(`${passed} passed`)
+    if (failed > 0) parts.push(`${failed} failed`)
+    if (other > 0) parts.push(`${other} other`)
+    console.log(parts.join(", "))
+  } else if (!streaming) {
     if (runResults.length === 1) {
       renderRunResult(runResults[0])
     } else {

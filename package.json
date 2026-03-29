@@ -42,7 +42,7 @@
     "chalk": "^5.4.1",
     "commander": "^13.1.0",
     "execa": "^9.5.2",
-    "log-update": "^7.2.0",
+    "tasuku": "^2.3.0",
     "yaml": "^2.8.3"
   },
   "devDependencies": {

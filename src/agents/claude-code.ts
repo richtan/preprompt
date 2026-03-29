@@ -45,12 +45,26 @@ export const claudeCode: AgentAdapter = {
     }
 
     try {
-      const result = await execa("claude", args, {
+      const proc = execa("claude", args, {
         cwd: workdir,
         timeout: options.timeout,
         input: useStdin ? prompt : undefined,
         reject: false,
       })
+
+      if (options.onOutput && proc.stdout) {
+        let buf = ""
+        proc.stdout.on("data", (chunk: Buffer) => {
+          buf += chunk.toString()
+          const lines = buf.split("\n")
+          buf = lines.pop() ?? ""
+          for (const line of lines) {
+            if (line.trim()) options.onOutput!(line)
+          }
+        })
+      }
+
+      const result = await proc
 
       return {
         exitCode: result.exitCode ?? 1,

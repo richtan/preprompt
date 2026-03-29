@@ -32,7 +32,7 @@ export const aider: AgentAdapter = {
     const start = Date.now()
 
     try {
-      const result = await execa(
+      const proc = execa(
         "aider",
         ["--yes-always", "--no-git", "--message", prompt],
         {
@@ -41,6 +41,20 @@ export const aider: AgentAdapter = {
           reject: false,
         }
       )
+
+      if (options.onOutput && proc.stdout) {
+        let buf = ""
+        proc.stdout.on("data", (chunk: Buffer) => {
+          buf += chunk.toString()
+          const lines = buf.split("\n")
+          buf = lines.pop() ?? ""
+          for (const line of lines) {
+            if (line.trim()) options.onOutput!(line)
+          }
+        })
+      }
+
+      const result = await proc
 
       return {
         exitCode: result.exitCode ?? 1,
