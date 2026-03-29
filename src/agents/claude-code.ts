@@ -2,7 +2,7 @@ import { execa } from "execa"
 import type { AgentAdapter, ExecuteOptions } from "./types.js"
 import type { AgentInfo, ExecutionResult } from "../types.js"
 
-const STDIN_THRESHOLD = 100_000 // 100KB
+const STDIN_THRESHOLD = 100_000
 
 export const claudeCode: AgentAdapter = {
   name: "claude-code",
@@ -40,45 +40,17 @@ export const claudeCode: AgentAdapter = {
     ]
 
     const useStdin = Buffer.byteLength(prompt, "utf8") > STDIN_THRESHOLD
-
     if (!useStdin) {
       args.push("-p", prompt)
     }
 
     try {
-      const proc = execa("claude", args, {
+      const result = await execa("claude", args, {
         cwd: workdir,
         timeout: options.timeout,
         input: useStdin ? prompt : undefined,
         reject: false,
       })
-
-      // Stream stdout line-by-line as it arrives
-      if (options.onOutput && proc.stdout) {
-        let buffer = ""
-        proc.stdout.on("data", (chunk: Buffer) => {
-          buffer += chunk.toString()
-          const lines = buffer.split("\n")
-          buffer = lines.pop() ?? ""
-          for (const line of lines) {
-            if (line.trim()) options.onOutput!(line, "stdout")
-          }
-        })
-      }
-
-      if (options.onOutput && proc.stderr) {
-        let buffer = ""
-        proc.stderr.on("data", (chunk: Buffer) => {
-          buffer += chunk.toString()
-          const lines = buffer.split("\n")
-          buffer = lines.pop() ?? ""
-          for (const line of lines) {
-            if (line.trim()) options.onOutput!(line, "stderr")
-          }
-        })
-      }
-
-      const result = await proc
 
       return {
         exitCode: result.exitCode ?? 1,

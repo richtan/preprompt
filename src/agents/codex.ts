@@ -42,38 +42,12 @@ export const codex: AgentAdapter = {
     args.push("-C", workdir, "--full-auto", "--skip-git-repo-check")
 
     try {
-      const proc = execa("codex", args, {
+      const result = await execa("codex", args, {
         cwd: workdir,
         timeout: options.timeout,
         input: useStdin ? prompt : undefined,
         reject: false,
       })
-
-      if (options.onOutput && proc.stdout) {
-        let buffer = ""
-        proc.stdout.on("data", (chunk: Buffer) => {
-          buffer += chunk.toString()
-          const lines = buffer.split("\n")
-          buffer = lines.pop() ?? ""
-          for (const line of lines) {
-            if (line.trim()) options.onOutput!(line, "stdout")
-          }
-        })
-      }
-
-      if (options.onOutput && proc.stderr) {
-        let buffer = ""
-        proc.stderr.on("data", (chunk: Buffer) => {
-          buffer += chunk.toString()
-          const lines = buffer.split("\n")
-          buffer = lines.pop() ?? ""
-          for (const line of lines) {
-            if (line.trim()) options.onOutput!(line, "stderr")
-          }
-        })
-      }
-
-      const result = await proc
 
       return {
         exitCode: result.exitCode ?? 1,

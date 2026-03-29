@@ -37,7 +37,7 @@ export const copilot: AgentAdapter = {
     const start = Date.now()
 
     try {
-      const proc = execa(
+      const result = await execa(
         "gh",
         ["copilot", "suggest", "-t", "shell", prompt],
         {
@@ -46,20 +46,6 @@ export const copilot: AgentAdapter = {
           reject: false,
         }
       )
-
-      if (options.onOutput && proc.stdout) {
-        let buffer = ""
-        proc.stdout.on("data", (chunk: Buffer) => {
-          buffer += chunk.toString()
-          const lines = buffer.split("\n")
-          buffer = lines.pop() ?? ""
-          for (const line of lines) {
-            if (line.trim()) options.onOutput!(line, "stdout")
-          }
-        })
-      }
-
-      const result = await proc
 
       return {
         exitCode: result.exitCode ?? 1,

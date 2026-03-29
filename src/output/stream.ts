@@ -1,21 +1,21 @@
 import chalk from "chalk"
-import yoctoSpinner from "yocto-spinner"
+import { logUpdateStderr } from "log-update"
 
-export interface StreamEvent {
-  agent: string
-  type: "start" | "stdout" | "stderr" | "file" | "command" | "done" | "error"
-  content: string
-  timestamp: number
-}
+const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
+const MAX_VISIBLE_FILES = 10
 
 let multiMode = false
 let maxAgentWidth = 0
-let activeSpinner: ReturnType<typeof yoctoSpinner> | null = null
-let spinnerStart = 0
-let spinnerTimer: ReturnType<typeof setInterval> | null = null
 let agentCount = 0
 let doneCount = 0
 let isTTY = process.stderr.isTTY ?? false
+
+// Spinner state
+let spinnerLabel = ""
+let spinnerStart = 0
+let spinnerTimer: ReturnType<typeof setInterval> | null = null
+let spinnerFrame = 0
+let fileCount = 0
 
 export function setStreamMode(multi: boolean, agentNames: string[] = []): void {
   multiMode = multi
@@ -24,27 +24,29 @@ export function setStreamMode(multi: boolean, agentNames: string[] = []): void {
     : 0
   agentCount = agentNames.length
   doneCount = 0
+  fileCount = 0
   isTTY = process.stderr.isTTY ?? false
 }
 
 export function startExecutionSpinner(label: string): void {
+  spinnerLabel = label
   spinnerStart = Date.now()
+  spinnerFrame = 0
 
   if (!isTTY) {
-    // Non-TTY: just print a static line
-    console.error(label)
+    process.stderr.write(label + "\n")
     return
   }
 
-  activeSpinner = yoctoSpinner({ text: label, stream: process.stderr }).start()
+  renderSpinner()
+  spinnerTimer = setInterval(renderSpinner, 80)
+}
 
-  // Update elapsed time every 100ms
-  spinnerTimer = setInterval(() => {
-    if (activeSpinner) {
-      const elapsed = ((Date.now() - spinnerStart) / 1000).toFixed(1)
-      activeSpinner.text = `${label} ${chalk.dim(elapsed + "s")}`
-    }
-  }, 100)
+function renderSpinner(): void {
+  const elapsed = ((Date.now() - spinnerStart) / 1000).toFixed(1)
+  const frame = chalk.dim(SPINNER_FRAMES[spinnerFrame % SPINNER_FRAMES.length])
+  logUpdateStderr(`${frame} ${spinnerLabel} ${chalk.dim(elapsed + "s")}`)
+  spinnerFrame++
 }
 
 export function stopSpinner(): void {
@@ -52,107 +54,55 @@ export function stopSpinner(): void {
     clearInterval(spinnerTimer)
     spinnerTimer = null
   }
-  if (activeSpinner) {
-    activeSpinner.stop()
-    activeSpinner = null
-  }
+  logUpdateStderr.clear()
 }
 
-function printLine(line: string): void {
-  if (activeSpinner) {
-    // Clear spinner line, print output, restart same spinner
-    activeSpinner.stop()
-    console.error(line)
-    activeSpinner.start()
+export function printLine(line: string): void {
+  // Print static line above the spinner
+  if (spinnerTimer) {
+    logUpdateStderr.clear()
+    process.stderr.write(line + "\n")
+    renderSpinner()
   } else {
-    console.error(line)
+    process.stderr.write(line + "\n")
   }
 }
 
-export function emitEvent(event: StreamEvent): void {
+export function emitFileChange(agent: string, path: string, type: "added" | "modified" | "deleted"): void {
+  fileCount++
+  if (fileCount > MAX_VISIBLE_FILES) return // capped, shown in summary
+
   const prefix = multiMode
-    ? event.agent.padEnd(maxAgentWidth + 2)
+    ? "  " + agent.padEnd(maxAgentWidth + 2)
     : "  "
 
-  switch (event.type) {
-    case "start":
-      // Suppressed. The spinner handles the "running" state.
-      break
+  const sigil = type === "added" ? chalk.green("+")
+    : type === "modified" ? chalk.yellow("~")
+    : chalk.red("-")
 
-    case "command":
-      printLine(prefix + chalk.bold("> ") + event.content)
-      break
+  printLine(`${prefix}${sigil} ${path}`)
+}
 
-    case "file":
-      printLine(prefix + chalk.green("+ ") + event.content)
-      break
+export function emitOverflowCount(count: number): void {
+  if (count <= 0) return
+  const prefix = multiMode ? "  " + "".padEnd(maxAgentWidth + 2) : "  "
+  printLine(`${prefix}${chalk.dim(`... and ${count} more`)}`)
+}
 
-    case "stdout": {
-      const parsed = parseStdout(event.content)
-      if (parsed) {
-        emitEvent({ ...event, type: parsed.type as "file" | "command", content: parsed.content })
-        return
-      }
-      const trimmed = event.content.trim()
-      if (trimmed && !isNoise(trimmed)) {
-        printLine(prefix + chalk.dim(truncate(trimmed, 120)))
-      }
-      break
-    }
+export function emitDone(content: string): void {
+  doneCount++
+  printLine(content)
 
-    case "stderr": {
-      const trimmed = event.content.trim()
-      if (trimmed && !isNoise(trimmed)) {
-        printLine(prefix + chalk.dim(trimmed))
-      }
-      break
-    }
-
-    case "done": {
-      doneCount++
-      printLine(event.content)
-
-      // If all agents done, stop the spinner
-      if (doneCount >= agentCount) {
-        stopSpinner()
-      }
-      break
-    }
-
-    case "error":
-      printLine(prefix + chalk.red(event.content))
-      break
+  if (doneCount >= agentCount) {
+    stopSpinner()
   }
 }
 
-function parseStdout(line: string): { type: string; content: string } | null {
-  const filePatterns = [
-    /(?:Created?|Wrote?|Writing)\s+[`']?([^\s`']+)[`']?/i,
-    /^\s*\+\s+(.+\.[a-z]+)\s*$/i,
-  ]
-  for (const pattern of filePatterns) {
-    const match = line.match(pattern)
-    if (match) return { type: "file", content: match[1] }
-  }
-
-  const cmdPatterns = [
-    /(?:Running|Executing|>\s*)\s*[`']?(.+?)[`']?\s*$/i,
-    /^\$\s+(.+)$/,
-  ]
-  for (const pattern of cmdPatterns) {
-    const match = line.match(pattern)
-    if (match && match[1].length < 200) return { type: "command", content: match[1] }
-  }
-
-  return null
-}
-
-function isNoise(line: string): boolean {
-  return /^[\s]*$|^─+$|^[=]+$|^Warning: no stdin/i.test(line)
-}
-
-function truncate(str: string, max: number): string {
-  return str.length > max ? str.slice(0, max - 3) + "..." : str
+export function emitError(agent: string, content: string): void {
+  const prefix = multiMode
+    ? "  " + agent.padEnd(maxAgentWidth + 2)
+    : "  "
+  printLine(prefix + chalk.red(content))
 }
 
 export function clearEvents(): void {
@@ -161,4 +111,5 @@ export function clearEvents(): void {
   maxAgentWidth = 0
   agentCount = 0
   doneCount = 0
+  fileCount = 0
 }
