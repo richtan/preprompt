@@ -182,25 +182,12 @@ export async function runLocal(
 
   // 2. Detect agents
   const showProgress = !options.json && !options.quiet
-  let installed: AgentAdapter[]
-  let allAgents: Awaited<ReturnType<typeof detectAgents>>
+  const allAgents = await detectAgents()
+  let installed = getInstalledAdapters(allAgents)
 
-  if (showProgress) {
-    const detectionResult = await task("Detecting agents", async ({ setTitle }) => {
-      const agents = await detectAgents()
-      const inst = getInstalledAdapters(agents)
-      const names = inst.map((a) => a.name).join(", ")
-      setTitle(inst.length > 0
-        ? `${inst.length} agent${inst.length === 1 ? "" : "s"} detected (${names})`
-        : "No agents detected"
-      )
-      return { allAgents: agents, installed: inst }
-    })
-    installed = detectionResult.result.installed
-    allAgents = detectionResult.result.allAgents
-  } else {
-    allAgents = await detectAgents()
-    installed = getInstalledAdapters(allAgents)
+  if (showProgress && installed.length > 0) {
+    const names = installed.map((a) => a.name).join(", ")
+    console.log(chalk.green("+") + ` ${installed.length} agent${installed.length === 1 ? "" : "s"} detected` + chalk.dim(` (${names})`))
   }
 
   if (installed.length === 0) {
@@ -220,17 +207,9 @@ export async function runLocal(
   }
 
   // 2c. Smart matrix analysis
+  const matrix = await analyzePrompt(promptContent)
   if (showProgress) {
-    await task("Analyzing prompt", async ({ setTitle }) => {
-      const matrix = await analyzePrompt(promptContent)
-      if (matrix.detectedTools.length > 0) {
-        setTitle(`${matrix.detectedTools.length} tools detected (${matrix.detectedTools.join(", ")})`)
-      } else {
-        setTitle("Prompt analyzed")
-      }
-    })
-  } else {
-    await analyzePrompt(promptContent)
+    renderMatrixAnalysis(matrix)
   }
 
   // 3. Filter agents
@@ -335,14 +314,15 @@ export async function runLocal(
       const self = evaluator.name === result.agent ? " (self)" : ""
 
       try {
-        const evalResult = await task(
+        const evalTask = await task(
           `Evaluating ${result.agent} with ${evaluator.name}${self}`,
-          async ({ setStatus }) => {
+          async () => {
             return evaluateRun(promptContent, result, evaluator)
           }
         )
-        evaluations.push(evalResult.result)
-        renderEvalResult(evalResult.result)
+        evaluations.push(evalTask.result)
+        evalTask.clear()
+        renderEvalResult(evalTask.result)
       } catch {
         // Evaluation failed, continue
       }
