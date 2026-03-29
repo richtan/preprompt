@@ -41,6 +41,14 @@ export interface RunResult {
   timestamp: number
 }
 
+export interface Criterion {
+  number: number
+  group: string   // section name (e.g., "Project setup", "Dependencies")
+  type: "command" | "file-exists" | "file-contains" | "service" | "behavioral"
+  description: string
+  check?: string  // the command or pattern to verify
+}
+
 export interface EvalStep {
   number: number
   description: string
@@ -51,6 +59,7 @@ export interface EvalStep {
 export interface EvalResult {
   agent: string
   evaluator: string
+  criteria: Criterion[]
   steps: EvalStep[]
   score: number
   summary: string
@@ -60,6 +69,7 @@ export interface EvalResult {
 
 export interface MultiRunResult {
   prompt: string
+  criteria?: Criterion[]
   results: RunResult[]
   evaluations?: EvalResult[]
   timestamp: number

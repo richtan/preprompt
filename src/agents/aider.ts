@@ -42,14 +42,14 @@ export const aider: AgentAdapter = {
         }
       )
 
-      if (options.onOutput && proc.stdout) {
+      if (options.onStatus && proc.stdout) {
         let buf = ""
         proc.stdout.on("data", (chunk: Buffer) => {
           buf += chunk.toString()
           const lines = buf.split("\n")
           buf = lines.pop() ?? ""
           for (const line of lines) {
-            if (line.trim()) options.onOutput!(line)
+            if (line.trim()) options.onStatus!(line)
           }
         })
       }

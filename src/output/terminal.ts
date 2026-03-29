@@ -138,7 +138,7 @@ export function renderEvalResult(evalResult: EvalResult): void {
   const failures = evalResult.steps.filter((s) => s.status !== "pass")
   if (failures.length > 0) {
     for (const step of failures) {
-      const icon = step.status === "partial" ? chalk.yellow("~") : chalk.red("x")
+      const icon = step.status === "partial" ? chalk.yellow("~") : chalk.red("✗")
       const desc = step.description
       console.log(`  ${icon} ${desc}`)
     }
