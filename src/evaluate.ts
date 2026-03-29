@@ -1,32 +1,47 @@
+import { execa } from "execa"
+import { access } from "node:fs/promises"
+import { join } from "node:path"
 import type { AgentAdapter } from "./agents/types.js"
-import type { RunResult, EvalResult, EvalStep, Criterion } from "./types.js"
+import type { EvalResult, EvalStep, Criterion } from "./types.js"
 import { createSandbox } from "./sandbox/manager.js"
 
-const MAX_STDOUT = 10_000
-const MAX_STDERR = 5_000
+const MAX_CRITERIA = 40
+const CHECK_TIMEOUT = 10_000
 
 // Phase 1: Generate criteria from the prompt BEFORE execution
-function buildCriteriaPrompt(promptContent: string): string {
-  return `You are analyzing an AI instruction prompt to determine specific, verifiable success criteria.
+function buildCriteriaPrompt(promptContent: string, feedback?: string): string {
+  let prompt = `You are analyzing an AI instruction prompt to determine specific, verifiable success criteria.
 
 PROMPT:
 ---
 ${promptContent}
 ---
 
-Group the criteria into logical sections (e.g., "Project setup", "Dependencies", "Source files", "Configuration", "Scripts", "Runtime"). Each criterion must be concrete and verifiable by an AI with CLI access.
+Group the criteria into logical sections (e.g., "Project setup", "Dependencies", "Source files", "Configuration", "Scripts", "Runtime"). Each criterion must be concrete and verifiable.
 
 Criterion types:
 - "command": a shell command that should exit 0 (e.g., "node -e \\"require('./package.json')\\"")
 - "file-exists": a file that should exist after execution
 - "file-contains": a file should contain specific content
-- "service": an endpoint that should respond (e.g., "curl -s localhost:3000/health")
-- "behavioral": something the agent should have done, verifiable from its output log
+- "service": an endpoint or process that should work
+- "behavioral": something the agent should have done
 
-For each criterion, provide a "group" (section name), "type", "description", and "check" (the exact command or pattern to verify it).
+IMPORTANT: Every criterion MUST include a "check" field with an executable shell command that exits 0 on success and non-zero on failure. Checks must be read-only verification commands that do NOT install packages, create files, or modify the environment.
+
+Examples of good checks:
+- "test -f package.json"
+- "node -e \\"require('express')\\""
+- "grep -q PORT .env"
+- "node -e \\"const p = require('./package.json'); process.exit(p.scripts?.dev ? 0 : 1)\\""
 
 Respond ONLY with this JSON (no markdown, no code fences):
 {"criteria":[{"number":1,"group":"Project setup","type":"file-exists","description":"package.json exists","check":"test -f package.json"},{"number":2,"group":"Dependencies","type":"command","description":"express is installed","check":"node -e \\"require('express')\\""}]}`
+
+  if (feedback) {
+    prompt += `\n\nUSER FEEDBACK ON PREVIOUS CRITERIA:\n${feedback}\n\nRevise the criteria to address this feedback. Keep existing good criteria and add/modify based on the feedback.`
+  }
+
+  return prompt
 }
 
 function parseCriteriaResponse(raw: string): Criterion[] | null {
@@ -41,7 +56,7 @@ function parseCriteriaResponse(raw: string): Criterion[] | null {
     const parsed = JSON.parse(jsonMatch[0])
     if (!Array.isArray(parsed.criteria)) return null
 
-    return parsed.criteria.map((c: any, i: number) => ({
+    const criteria = parsed.criteria.map((c: any, i: number) => ({
       number: c.number ?? i + 1,
       group: String(c.group ?? "General"),
       type: ["command", "file-exists", "file-contains", "service", "behavioral"].includes(c.type)
@@ -50,6 +65,8 @@ function parseCriteriaResponse(raw: string): Criterion[] | null {
       description: String(c.description ?? ""),
       check: c.check ? String(c.check) : undefined,
     }))
+
+    return criteria.slice(0, MAX_CRITERIA)
   } catch {
     return null
   }
@@ -57,9 +74,10 @@ function parseCriteriaResponse(raw: string): Criterion[] | null {
 
 export async function generateCriteria(
   promptContent: string,
-  analyzerAdapter: AgentAdapter
+  analyzerAdapter: AgentAdapter,
+  feedback?: string
 ): Promise<Criterion[]> {
-  const criteriaPrompt = buildCriteriaPrompt(promptContent)
+  const criteriaPrompt = buildCriteriaPrompt(promptContent, feedback)
   const sandbox = await createSandbox()
 
   try {
@@ -73,159 +91,97 @@ export async function generateCriteria(
   }
 }
 
-// Phase 2: Evaluate agent execution against pre-determined criteria
-function buildEvalPrompt(
-  promptContent: string,
+// Phase 2: Evaluate by running check commands in the agent's sandbox
+export async function evaluateInSandbox(
+  agent: string,
   criteria: Criterion[],
-  result: RunResult
-): string {
-  const stdout = result.execution.stdout.length > MAX_STDOUT
-    ? result.execution.stdout.slice(0, MAX_STDOUT) + "\n... (truncated)"
-    : result.execution.stdout
-
-  const stderr = result.execution.stderr.length > MAX_STDERR
-    ? result.execution.stderr.slice(0, MAX_STDERR) + "\n... (truncated)"
-    : result.execution.stderr
-
-  const added = result.diff.added.length > 0
-    ? result.diff.added.join("\n")
-    : "(none)"
-
-  const criteriaList = criteria.map((c) =>
-    `  ${c.number}. [${c.type}] ${c.description}${c.check ? ` -- verify: ${c.check}` : ""}`
-  ).join("\n")
-
-  return `You are evaluating whether an AI coding agent met specific pre-determined criteria.
-
-ORIGINAL INSTRUCTIONS:
----
-${promptContent}
----
-
-PRE-DETERMINED CRITERIA (evaluate each one):
-${criteriaList}
-
-AGENT: ${result.agent}
-EXIT CODE: ${result.execution.exitCode}
-DURATION: ${(result.execution.duration / 1000).toFixed(1)}s
-
-AGENT OUTPUT (stdout):
----
-${stdout || "(empty)"}
----
-
-AGENT ERRORS (stderr):
----
-${stderr || "(empty)"}
----
-
-FILES CREATED:
-${added}
-
-For each criterion above, determine if the agent met it based on the execution trace, files created, and agent output. For "command" and "file-exists" criteria, check the files list. For "behavioral" criteria, check the agent's stdout for evidence.
-
-Score each criterion: "pass", "fail", or "partial".
-Give an overall score 0-100 based on the percentage of criteria met.
-
-Respond ONLY with this JSON (no markdown, no code fences):
-{"steps":[{"number":1,"description":"...","status":"pass","note":"..."}],"score":85,"summary":"one line summary","issues":["issue 1"]}`
-}
-
-function parseEvalResponse(raw: string): {
-  steps: EvalStep[]
-  score: number
-  summary: string
-  issues: string[]
-} | null {
-  let jsonStr = raw.trim()
-  const fenceMatch = jsonStr.match(/```(?:json)?\s*([\s\S]*?)```/)
-  if (fenceMatch) jsonStr = fenceMatch[1].trim()
-
-  const jsonMatch = jsonStr.match(/\{[\s\S]*\}/)
-  if (!jsonMatch) return null
-
-  try {
-    const parsed = JSON.parse(jsonMatch[0])
-    if (!Array.isArray(parsed.steps) || typeof parsed.score !== "number") return null
-
-    return {
-      steps: parsed.steps.map((s: any, i: number) => ({
-        number: s.number ?? i + 1,
-        description: String(s.description ?? ""),
-        status: ["pass", "fail", "partial"].includes(s.status) ? s.status : "fail",
-        note: s.note ? String(s.note) : undefined,
-      })),
-      score: Math.max(0, Math.min(100, Math.round(parsed.score))),
-      summary: String(parsed.summary ?? ""),
-      issues: Array.isArray(parsed.issues) ? parsed.issues.map(String) : [],
-    }
-  } catch {
-    return null
-  }
-}
-
-export async function evaluateRun(
-  promptContent: string,
-  criteria: Criterion[],
-  result: RunResult,
-  evaluatorAdapter: AgentAdapter
+  sandboxDir: string,
+  onProgress?: (checked: number, total: number, step: EvalStep) => void
 ): Promise<EvalResult> {
-  const evalPrompt = buildEvalPrompt(promptContent, criteria, result)
-  const sandbox = await createSandbox()
   const start = Date.now()
 
   try {
-    const evalExecution = await evaluatorAdapter.execute(
-      evalPrompt,
-      sandbox.dir,
-      { timeout: 60_000 }
-    )
-
-    const duration = Date.now() - start
-    const parsed = parseEvalResponse(evalExecution.stdout)
-
-    if (parsed) {
-      return {
-        agent: result.agent,
-        evaluator: evaluatorAdapter.name,
-        criteria,
-        steps: parsed.steps,
-        score: parsed.score,
-        summary: parsed.summary,
-        issues: parsed.issues,
-        duration,
-      }
-    }
-
-    // Fallback: couldn't parse JSON
+    await access(sandboxDir)
+  } catch {
     return {
-      agent: result.agent,
-      evaluator: evaluatorAdapter.name,
+      agent,
       criteria,
       steps: criteria.map((c) => ({
         number: c.number,
         description: c.description,
-        status: result.status === "pass" ? "pass" as const : "fail" as const,
-        note: "Evaluator response could not be parsed",
+        status: "skip" as const,
+        note: "sandbox unavailable",
       })),
-      score: result.status === "pass" ? 70 : 20,
-      summary: result.status === "pass"
-        ? "Agent completed (evaluation unstructured)"
-        : `Agent failed with exit code ${result.execution.exitCode}`,
-      issues: ["Evaluator did not return structured JSON"],
-      duration,
+      score: 0,
+      duration: Date.now() - start,
     }
-  } finally {
-    await sandbox.destroy()
   }
-}
 
-export function pickEvaluator(
-  executorName: string,
-  installedAdapters: AgentAdapter[]
-): AgentAdapter | null {
-  const other = installedAdapters.find((a) => a.name !== executorName)
-  if (other) return other
-  if (installedAdapters.length > 0) return installedAdapters[0]
-  return null
+  const steps: EvalStep[] = []
+  let passCount = 0
+  let totalCount = 0
+
+  const env = {
+    ...process.env,
+    PATH: `${join(sandboxDir, "node_modules", ".bin")}:${process.env.PATH}`,
+  }
+
+  for (const criterion of criteria) {
+    if (!criterion.check) {
+      const step: EvalStep = {
+        number: criterion.number,
+        description: criterion.description,
+        status: "skip",
+        note: "no check command",
+      }
+      steps.push(step)
+      onProgress?.(steps.length, criteria.length, step)
+      continue
+    }
+
+    totalCount++
+
+    try {
+      const result = await execa(criterion.check, {
+        cwd: sandboxDir,
+        shell: true,
+        timeout: CHECK_TIMEOUT,
+        reject: false,
+        env,
+      })
+
+      const passed = result.exitCode === 0
+      if (passed) passCount++
+
+      const step: EvalStep = {
+        number: criterion.number,
+        description: criterion.description,
+        status: passed ? "pass" : "fail",
+        note: passed ? undefined : (result.stderr || result.stdout || `exit code ${result.exitCode}`).slice(0, 200),
+      }
+      steps.push(step)
+      onProgress?.(steps.length, criteria.length, step)
+    } catch (error: unknown) {
+      const isTimeout = error instanceof Error && error.message.includes("timed out")
+
+      const step: EvalStep = {
+        number: criterion.number,
+        description: criterion.description,
+        status: "fail",
+        note: isTimeout ? "check timed out" : "check failed to execute",
+      }
+      steps.push(step)
+      onProgress?.(steps.length, criteria.length, step)
+    }
+  }
+
+  const score = totalCount > 0 ? Math.round((passCount / totalCount) * 100) : 0
+
+  return {
+    agent,
+    criteria,
+    steps,
+    score,
+    duration: Date.now() - start,
+  }
 }

@@ -1,11 +1,17 @@
 import { basename } from "node:path"
 import { execa } from "execa"
-import type { AgentAdapter, ExecuteOptions } from "./types.js"
+import type { AgentAdapter, ExecuteOptions, ActionType } from "./types.js"
 import type { AgentInfo, ExecutionResult } from "../types.js"
 
 const STDIN_THRESHOLD = 100_000
 
-function extractStatus(event: any): string | null {
+interface ExtractedAction {
+  status: string
+  actionType: ActionType
+  actionText: string
+}
+
+function extractAction(event: any): ExtractedAction | null {
   if (event.type !== "assistant") return null
   const content = event.message?.content
   if (!Array.isArray(content)) return null
@@ -16,16 +22,26 @@ function extractStatus(event: any): string | null {
     const input = block.input ?? {}
 
     switch (name) {
-      case "Write": return `Writing ${basename(input.file_path ?? "file")}`
-      case "Edit": return `Editing ${basename(input.file_path ?? "file")}`
-      case "Read": return `Reading ${basename(input.file_path ?? "file")}`
+      case "Write": {
+        const file = basename(input.file_path ?? "file")
+        return { status: `Writing ${file}`, actionType: "create", actionText: file }
+      }
+      case "Edit": {
+        const file = basename(input.file_path ?? "file")
+        return { status: `Editing ${file}`, actionType: "edit", actionText: file }
+      }
+      case "Read": {
+        const file = basename(input.file_path ?? "file")
+        return { status: `Reading ${file}`, actionType: "other", actionText: file }
+      }
       case "Bash": {
         const cmd = String(input.command ?? "")
-        return `Running ${cmd.length > 60 ? cmd.slice(0, 57) + "..." : cmd}`
+        const status = cmd.length > 60 ? `Running ${cmd.slice(0, 57)}...` : `Running ${cmd}`
+        return { status, actionType: "command", actionText: cmd }
       }
-      case "Glob": return "Searching files..."
-      case "Grep": return "Searching code..."
-      default: return `${name}...`
+      case "Glob": return { status: "Searching files...", actionType: "other", actionText: "Searching files" }
+      case "Grep": return { status: "Searching code...", actionType: "other", actionText: "Searching code" }
+      default: return { status: `${name}...`, actionType: "other", actionText: name }
     }
   }
   return null
@@ -89,6 +105,13 @@ export const claudeCode: AgentAdapter = {
 
       let finalText = ""
 
+      // Raw stdout tap for incremental text parsing (works in any mode)
+      if (options.onStdout && proc.stdout) {
+        proc.stdout.on("data", (chunk: Buffer) => {
+          options.onStdout!(chunk.toString())
+        })
+      }
+
       if (streaming && proc.stdout) {
         let buf = ""
         proc.stdout.on("data", (chunk: Buffer) => {
@@ -101,8 +124,14 @@ export const claudeCode: AgentAdapter = {
               const event = JSON.parse(line)
 
               // Extract status from tool_use events
-              const status = extractStatus(event)
-              if (status) options.onStatus!(status)
+              const action = extractAction(event)
+              if (action) {
+                options.onStatus!(action.status)
+                // Only log commands, creates, edits to history (not reads/searches)
+                if (action.actionType !== "other") {
+                  options.onAction?.(action.actionType, action.actionText)
+                }
+              }
 
               // Collect text content
               if (event.type === "assistant") {

@@ -1,16 +1,22 @@
 import { useState, useEffect } from "react"
 import { Box, Text } from "ink"
 import Spinner from "./Spinner.js"
+import type { ActionType } from "../agents/types.js"
+
+interface HistoryEntry {
+  type: ActionType
+  text: string
+}
 
 interface AgentTaskProps {
   name: string
   status: string
-  files: string[]
+  history: HistoryEntry[]
   done: boolean
   result?: {
     status: "pass" | "fail" | "timeout" | "error" | "no-changes"
     duration: number
-    fileCount: number
+    fileSummary: string
     error?: string
   }
 }
@@ -20,7 +26,16 @@ function formatDur(ms: number): string {
   return `${(ms / 1000).toFixed(1)}s`
 }
 
-export default function AgentTask({ name, status, files, done, result }: AgentTaskProps) {
+function historyVerb(type: ActionType): string {
+  switch (type) {
+    case "command": return "run"
+    case "create": return "create"
+    case "edit": return "edit"
+    default: return "run"
+  }
+}
+
+export default function AgentTask({ name, status, history, done, result }: AgentTaskProps) {
   const [elapsed, setElapsed] = useState(0)
 
   useEffect(() => {
@@ -32,27 +47,6 @@ export default function AgentTask({ name, status, files, done, result }: AgentTa
     return () => clearInterval(timer)
   }, [done])
 
-  if (done && result) {
-    const icon = result.status === "pass" ? "✓" : result.status === "timeout" ? "~" : "✗"
-    const color = result.status === "pass" ? "green" : result.status === "timeout" ? "yellow" : "red"
-    const statusText = result.status === "pass" ? "passed"
-      : result.status === "timeout" ? "timed out"
-      : result.status === "no-changes" ? "no changes"
-      : "failed"
-
-    return (
-      <Box flexDirection="column">
-        <Text>
-          <Text color={color}>{icon}</Text>
-          {" "}{name}  {statusText}  {formatDur(result.duration)}  {result.fileCount} files
-        </Text>
-        {files.map((f, i) => (
-          <Text key={i} dimColor>    + {f}</Text>
-        ))}
-      </Box>
-    )
-  }
-
   return (
     <Box flexDirection="column">
       <Box>
@@ -61,8 +55,8 @@ export default function AgentTask({ name, status, files, done, result }: AgentTa
         {status && <Text dimColor>  {status}</Text>}
         <Text dimColor>  ({formatDur(elapsed)})</Text>
       </Box>
-      {files.map((f, i) => (
-        <Text key={i} dimColor>    + {f}</Text>
+      {history.map((h, i) => (
+        <Text key={`h-${i}`} dimColor>    <Text bold>{historyVerb(h.type)}</Text> {h.text}</Text>
       ))}
     </Box>
   )

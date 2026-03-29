@@ -25,8 +25,9 @@ async function walk(
   }
 
   for (const entry of entries) {
-    // Skip hidden dirs like .git, node_modules
-    if (entry.name.startsWith(".") || entry.name === "node_modules") continue
+    // Skip .git and node_modules (large, not user-authored)
+    // Include other hidden files (.env, .gitignore, .eslintrc, etc.)
+    if (entry.name === ".git" || entry.name === "node_modules") continue
 
     const fullPath = join(currentDir, entry.name)
     const relPath = relative(baseDir, fullPath)

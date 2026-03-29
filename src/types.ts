@@ -52,18 +52,15 @@ export interface Criterion {
 export interface EvalStep {
   number: number
   description: string
-  status: "pass" | "fail" | "partial"
+  status: "pass" | "fail" | "skip"
   note?: string
 }
 
 export interface EvalResult {
   agent: string
-  evaluator: string
   criteria: Criterion[]
   steps: EvalStep[]
   score: number
-  summary: string
-  issues: string[]
   duration: number
 }
 

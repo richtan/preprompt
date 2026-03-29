@@ -1,8 +1,9 @@
 import chalk from "chalk"
 import { readFile, access } from "node:fs/promises"
 import { resolve } from "node:path"
+import { emitKeypressEvents } from "node:readline"
 import { detectAgents, getInstalledAdapters } from "../agents/detector.js"
-import type { AgentAdapter } from "../agents/types.js"
+import type { AgentAdapter, ActionType } from "../agents/types.js"
 import { createSandbox } from "../sandbox/manager.js"
 import { captureSnapshot, diffSnapshots } from "../sandbox/snapshot.js"
 import {
@@ -18,7 +19,7 @@ import { saveMultiResult } from "../storage.js"
 import { scanPrompt } from "../scanner.js"
 import { analyzePrompt } from "../matrix.js"
 import { getErrorHint, extractErrorSummary } from "../errors.js"
-import { generateCriteria, evaluateRun, pickEvaluator } from "../evaluate.js"
+import { generateCriteria, evaluateInSandbox } from "../evaluate.js"
 import { renderApp, type UIController } from "../ui/render.js"
 import type { RunResult, MultiRunResult, EvalResult, EvalStep, Criterion, Snapshot } from "../types.js"
 
@@ -34,7 +35,213 @@ function formatDur(ms: number): string {
   return `${(ms / 1000).toFixed(1)}s`
 }
 
-const MAX_VISIBLE_FILES = 10
+function visibleLength(str: string): number {
+  return str.replace(/\x1b\[[0-9;]*m/g, "").length
+}
+
+function padStartVisible(str: string, width: number): string {
+  const visible = visibleLength(str)
+  return " ".repeat(Math.max(0, width - visible)) + str
+}
+
+export function formatFileTree(files: string[]): string {
+  if (files.length === 0) return "no files"
+
+  const roots: string[] = []
+  const dirs = new Map<string, string[]>()
+
+  for (const file of files) {
+    const parts = file.split("/")
+    if (parts.length === 1) {
+      roots.push(file)
+    } else {
+      const dir = parts[0]
+      if (!dirs.has(dir)) dirs.set(dir, [])
+      dirs.get(dir)!.push(parts.slice(1).join("/"))
+    }
+  }
+
+  const segments: string[] = []
+  for (const root of roots) segments.push(root)
+  for (const [dir, children] of dirs) {
+    if (children.length === 1) {
+      segments.push(`${dir}/${children[0]}`)
+    } else {
+      segments.push(`${dir}/{${children.join(", ")}}`)
+    }
+  }
+
+  const result = segments.join(", ")
+  if (result.length <= 80) return result
+
+  let truncated = ""
+  let shown = 0
+  for (const seg of segments) {
+    const next = shown === 0 ? seg : truncated + ", " + seg
+    if (next.length > 65) break
+    truncated = next
+    shown++
+  }
+  const remaining = segments.length - shown
+  return remaining > 0 ? `${truncated}, +${remaining} more` : truncated
+}
+
+function displayCriteria(criteria: Criterion[]): number {
+  const groups = new Map<string, Criterion[]>()
+  for (const c of criteria) {
+    const g = c.group ?? "General"
+    if (!groups.has(g)) groups.set(g, [])
+    groups.get(g)!.push(c)
+  }
+  let lines = 0
+  for (const [group, items] of groups) {
+    console.log(`  ${chalk.bold(group)} ${chalk.dim(`(${items.length})`)}`)
+    lines++
+    for (const c of items) {
+      console.log(chalk.dim(`    ${c.number}. ${c.description}`))
+      lines++
+    }
+  }
+  return lines
+}
+
+async function promptCriteriaApproval(): Promise<{ action: "accept" } | { action: "revise"; feedback: string }> {
+  if (!process.stdin.isTTY) return { action: "accept" }
+
+  return new Promise((resolve) => {
+    let selected = 0  // 0=Accept, 1=Revise
+    let input = ""
+    let cursorPos = 0 // position within input (0 to input.length)
+    let cursorRow = 0 // 0=row A (Accept), 1=row B (Revise)
+    const maxInput = (process.stdout.columns || 80) - 14
+
+    // Reserve 2 lines
+    process.stdout.write("\n\n")
+    process.stdout.moveCursor(0, -2)
+    cursorRow = 0
+
+    function draw() {
+      // Step 1: Always navigate to row A
+      if (cursorRow === 1) {
+        process.stdout.moveCursor(0, -1)
+      }
+      cursorRow = 0
+
+      // Step 2: Clear and write row A
+      process.stdout.cursorTo(0)
+      process.stdout.write("\x1b[K")
+      const line1 = selected === 0
+        ? `  ${chalk.green("❯")} ${chalk.bold("Accept")}`
+        : `    Accept`
+      process.stdout.write(line1)
+
+      // Step 3: Move to row B, clear, write (always show text if present)
+      process.stdout.write("\n")
+      process.stdout.write("\x1b[K")
+      if (selected === 1) {
+        process.stdout.write(`  ${chalk.green("❯")} ${chalk.bold("Revise")}${input ? ", " + input : ", "}`)
+      } else {
+        process.stdout.write(input ? `    Revise${chalk.dim(", " + input)}` : `    Revise`)
+      }
+      cursorRow = 1
+
+      // Step 4: Cursor placement and visibility
+      if (selected === 0) {
+        process.stdout.write("\x1b[?25l") // hide cursor
+        process.stdout.moveCursor(0, -1)
+        process.stdout.cursorTo(0)
+        cursorRow = 0
+      } else {
+        process.stdout.write("\x1b[?25h") // show cursor
+        process.stdout.cursorTo(12 + cursorPos) // position within text
+      }
+    }
+
+    draw()
+
+    emitKeypressEvents(process.stdin)
+    process.stdin.setRawMode(true)
+    process.stdin.resume()
+
+    function done(result: { action: "accept" } | { action: "revise"; feedback: string }) {
+      process.stdin.setRawMode(false)
+      process.stdin.pause()
+      process.stdin.removeListener("keypress", handler)
+      process.stdout.write("\x1b[?25h") // always restore cursor visibility
+      // Navigate to row A and clear both rows
+      if (cursorRow === 1) {
+        process.stdout.moveCursor(0, -1)
+      }
+      process.stdout.cursorTo(0)
+      process.stdout.clearScreenDown()
+      resolve(result)
+    }
+
+    function handler(ch: string | undefined, key: { name: string; ctrl: boolean; meta?: boolean }) {
+      if (!key) return
+      if (key.ctrl && key.name === "c") {
+        process.stdin.setRawMode(false)
+        process.stdout.write("\x1b[?25h") // restore cursor
+        process.exit(0)
+      }
+
+      // Enter: submit
+      if (key.name === "return") {
+        if (selected === 0 || !input.trim()) {
+          done({ action: "accept" })
+        } else {
+          done({ action: "revise", feedback: input.trim() })
+        }
+        return
+      }
+
+      // Arrow navigation (text preserved across selection changes)
+      if (key.name === "up" && selected > 0) { selected = 0; draw(); return }
+      if (key.name === "down" && selected < 1) { selected = 1; draw(); return }
+
+      // Text editing when on Revise
+      if (selected === 1) {
+        if (key.name === "left" && cursorPos > 0) { cursorPos--; draw(); return }
+        if (key.name === "right" && cursorPos < input.length) { cursorPos++; draw(); return }
+        if (key.name === "home") { cursorPos = 0; draw(); return }
+        if (key.name === "end") { cursorPos = input.length; draw(); return }
+
+        if (key.name === "backspace") {
+          if (cursorPos > 0) {
+            input = input.slice(0, cursorPos - 1) + input.slice(cursorPos)
+            cursorPos--
+            draw()
+          }
+          return
+        }
+
+        if (ch && ch.length === 1 && ch.charCodeAt(0) >= 32 && !key.ctrl && !key.meta && input.length < maxInput) {
+          input = input.slice(0, cursorPos) + ch + input.slice(cursorPos)
+          cursorPos++
+          draw()
+          return
+        }
+      }
+    }
+
+    process.stdin.on("keypress", handler)
+  })
+}
+
+const SPINNER_FRAMES = ["⠋","⠙","⠹","⠸","⠼","⠴","⠦","⠧","⠇","⠏"]
+
+function startSpinner(label: string): () => void {
+  let i = 0
+  process.stdout.write("\x1b[?25l") // hide cursor during spinner
+  const interval = setInterval(() => {
+    process.stdout.write(`\r${SPINNER_FRAMES[i++ % SPINNER_FRAMES.length]} ${chalk.dim(label)}`)
+  }, 80)
+  return () => {
+    clearInterval(interval)
+    process.stdout.write("\r" + " ".repeat(label.length + 4) + "\r")
+    process.stdout.write("\x1b[?25h") // restore cursor
+  }
+}
 
 export async function resolvePrompt(promptInput: string): Promise<{
   content: string
@@ -58,66 +265,44 @@ export async function resolvePrompt(promptInput: string): Promise<{
   }
 }
 
+interface AgentRunOutput {
+  result: RunResult
+  sandbox: { dir: string; destroy: () => Promise<void> }
+}
+
 async function runSingleAgent(
   adapter: AgentAdapter,
   promptContent: string,
   promptFile: string | null,
   timeout: number,
   ui?: UIController
-): Promise<RunResult> {
+): Promise<AgentRunOutput> {
   const sandbox = await createSandbox()
   const agentName = adapter.name
 
+  const before = await captureSnapshot(sandbox.dir)
+
+  const onStatus = ui
+    ? (status: string) => {
+        ui.updateAgentStatus(agentName, status)
+      }
+    : undefined
+
+  const onAction = ui
+    ? (type: ActionType, text: string) => {
+        ui.addAgentHistory(agentName, type, text)
+      }
+    : undefined
+
   try {
-    const before = await captureSnapshot(sandbox.dir)
-
-    // Filesystem polling: show new files via Ink UI
-    let lastSnapshot: Snapshot = before
-    const emittedFiles = new Set<string>()
-    const poller = setInterval(async () => {
-      try {
-        const current = await captureSnapshot(sandbox.dir)
-        const delta = diffSnapshots(lastSnapshot, current)
-        for (const path of delta.added) {
-          const display = path.includes("/") ? path.split("/")[0] + "/" : path
-          if (!emittedFiles.has(display) && emittedFiles.size < MAX_VISIBLE_FILES) {
-            emittedFiles.add(display)
-            if (ui) ui.addAgentFile(agentName, display)
-          }
-        }
-        lastSnapshot = current
-      } catch { /* sandbox may be gone */ }
-    }, 2000)
-
-    // onStatus: update the Ink UI with the agent's current action
-    // For Claude Code and Codex, this receives structured status from event parsing
-    // For Aider and Copilot, this receives raw stdout lines
-    const onStatus = ui
-      ? (status: string) => {
-          ui.updateAgentStatus(agentName, status)
-        }
-      : undefined
-
     const execution = await adapter.execute(
       `Follow these instructions exactly in the current directory:\n\n${promptContent}`,
       sandbox.dir,
-      { timeout, onStatus }
+      { timeout, onStatus, onAction }
     )
-
-    clearInterval(poller)
 
     const after = await captureSnapshot(sandbox.dir)
     const diff = diffSnapshots(before, after)
-
-    // Emit remaining file changes that polling missed
-    const polledDelta = diffSnapshots(lastSnapshot, after)
-    for (const path of polledDelta.added) {
-      const display = path.includes("/") ? path.split("/")[0] + "/" : path
-      if (!emittedFiles.has(display) && emittedFiles.size < MAX_VISIBLE_FILES) {
-        emittedFiles.add(display)
-        if (ui) ui.addAgentFile(agentName, display)
-      }
-    }
 
     const noChanges =
       diff.added.length === 0 &&
@@ -135,20 +320,19 @@ async function runSingleAgent(
       status = "pass"
     }
 
-    // Update UI with completion
     if (ui) {
-      const fileCount = new Set(diff.added.map((p) => p.split("/")[0])).size
+      const fileSummary = formatFileTree(diff.added)
       ui.completeAgent(agentName, {
         status,
         duration: execution.duration,
-        fileCount,
-        error: status === "fail"
-          ? extractErrorSummary(execution.stderr) ?? `exit code ${execution.exitCode}`
+        fileSummary,
+        error: status === "fail" ? `exit code ${execution.exitCode}`
+          : status === "timeout" ? `timed out after ${formatDur(timeout)}`
           : undefined,
       })
     }
 
-    return {
+    const result: RunResult = {
       agent: adapter.name,
       prompt: promptFile ?? "(inline)",
       workdir: sandbox.dir,
@@ -159,9 +343,60 @@ async function runSingleAgent(
       status,
       timestamp: Date.now(),
     }
-  } finally {
+
+    return { result, sandbox }
+  } catch (error) {
     await sandbox.destroy()
+    throw error
   }
+}
+
+function renderEvalResults(evaluations: EvalResult[], ui: UIController): void {
+  ui.addCompleted("")
+
+  const maxNameLen = Math.max(...evaluations.map((e) => e.agent.length))
+
+  for (const evaluation of evaluations) {
+    const passed = evaluation.steps.filter((s) => s.status === "pass").length
+    const failed = evaluation.steps.filter((s) => s.status === "fail").length
+
+    const scoreColor = evaluation.score >= 80 ? chalk.green
+      : evaluation.score >= 50 ? chalk.yellow
+      : chalk.red
+    const icon = evaluation.score >= 80 ? chalk.green("●")
+      : evaluation.score >= 50 ? chalk.yellow("●")
+      : chalk.red("●")
+
+    const name = evaluation.agent.padEnd(maxNameLen)
+    const score = scoreColor(`${evaluation.score}/100`)
+    const passText = chalk.green(`${passed} passed`)
+    const failText = failed > 0 ? `  ${chalk.red(`${failed} failed`)}` : ""
+
+    ui.addCompleted(`${icon} ${chalk.bold(name)}  ${score}  ${passText}${failText}`)
+  }
+
+  const agentsWithFailures = evaluations.filter((e) =>
+    e.steps.some((s) => s.status === "fail")
+  )
+
+  if (agentsWithFailures.length > 0) {
+    ui.addCompleted("")
+
+    for (const evaluation of agentsWithFailures) {
+      ui.addCompleted(chalk.bold(evaluation.agent))
+
+      for (const step of evaluation.steps) {
+        if (step.status !== "fail") continue
+
+        ui.addCompleted(`  ${chalk.red("●")} ${step.description}`)
+        if (step.note) {
+          ui.addCompleted(chalk.dim(`    ${step.note}`))
+        }
+      }
+    }
+  }
+
+  ui.addCompleted("")
 }
 
 export async function runLocal(
@@ -180,29 +415,24 @@ export async function runLocal(
 
   const streaming = !options.json && !options.quiet
 
-  // 2. Start Ink UI (only for interactive mode)
-  let ui: UIController | undefined
-  if (streaming) {
-    ui = renderApp()
-  }
+  // === Phase 1: Pre-agent (console.log + readline) ===
 
-  // 3. Detect agents
+  // 2. Detect agents
   const allAgents = await detectAgents()
   let installed = getInstalledAdapters(allAgents)
 
-  if (ui && installed.length > 0) {
+  if (streaming && installed.length > 0) {
     const names = installed.map((a) => a.name).join(", ")
-    ui.addCompleted(`${chalk.green("✓")} ${installed.length} agent${installed.length === 1 ? "" : "s"} detected ${chalk.dim("(" + names + ")")}`)
+    console.log(`${chalk.green("●")} ${installed.length} agent${installed.length === 1 ? "" : "s"} detected ${chalk.dim("(" + names + ")")}`)
   }
 
   if (installed.length === 0) {
-    if (ui) ui.finish()
     renderAgentList(allAgents)
     process.exitCode = 1
     return
   }
 
-  // 3b. Scan for destructive patterns
+  // 2b. Scan for destructive patterns
   const scan = scanPrompt(promptContent)
   if (!scan.safe) {
     renderWarning(
@@ -212,18 +442,17 @@ export async function runLocal(
     )
   }
 
-  // 3c. Smart matrix analysis
+  // 2c. Smart matrix analysis
   const matrix = await analyzePrompt(promptContent)
-  if (ui && matrix.detectedTools.length > 0) {
-    ui.addCompleted(`${chalk.green("✓")} ${matrix.detectedTools.length} tools detected ${chalk.dim("(" + matrix.detectedTools.join(", ") + ")")}`)
+  if (streaming && matrix.detectedTools.length > 0) {
+    console.log(`${chalk.green("●")} ${matrix.detectedTools.length} tools detected ${chalk.dim("(" + matrix.detectedTools.join(", ") + ")")}`)
   }
 
-  // 4. Filter agents
+  // 3. Filter agents
   if (options.agents) {
     const requested = options.agents.split(",").map((s) => s.trim())
     const filtered = installed.filter((a) => requested.includes(a.name))
     if (filtered.length === 0) {
-      if (ui) ui.finish()
       renderError(
         `None of the requested agents are installed: ${requested.join(", ")}\n` +
           `  Available: ${installed.map((a) => a.name).join(", ")}`
@@ -234,42 +463,77 @@ export async function runLocal(
     installed = filtered
   }
 
-  // 5. Generate evaluation criteria BEFORE execution
+  // 4. Generate and approve criteria
   let criteria: Criterion[] = []
-  if (!options.quiet && !options.json) {
-    const criteriaGenerator = installed[0]
-    if (ui) ui.setActivity("Generating evaluation criteria...")
+  let feedback: string | undefined
+  let displayedLines = 0 // lines used by criteria display (for clearing on revision)
 
-    criteria = await generateCriteria(promptContent, criteriaGenerator)
+  while (true) {
+    // On revision, clear the previous criteria display
+    if (feedback && displayedLines > 0) {
+      process.stdout.moveCursor(0, -displayedLines)
+      process.stdout.clearScreenDown()
+      displayedLines = 0
+    }
 
-    if (ui) {
-      ui.setActivity(null)
-      if (criteria.length > 0) {
-        ui.addCompleted(`${chalk.green("✓")} ${criteria.length} criteria identified`)
-      }
+    const stopSpinner = streaming
+      ? startSpinner(feedback ? "Revising criteria..." : "Generating criteria...")
+      : undefined
+
+    criteria = await generateCriteria(promptContent, installed[0], feedback)
+
+    stopSpinner?.()
+
+    if (criteria.length === 0) break
+    if (!streaming) break // auto-approve in non-interactive modes
+
+    // Display criteria (track lines for clearing on revision)
+    console.log(`${chalk.green("●")} ${criteria.length} criteria generated`)
+    console.log("")
+    const criteriaLines = displayCriteria(criteria)
+    console.log("")
+    displayedLines = 1 + 1 + criteriaLines + 1 // header + blank + criteria + blank
+
+    // Interactive approval
+    const result = await promptCriteriaApproval()
+
+    if (result.action === "accept") {
+      console.log("")
+      break
+    } else {
+      feedback = result.feedback
     }
   }
 
-  // 6. Run all agents in parallel
+  // === Phase 2: Agent execution (Ink) ===
+
+  let ui: UIController | undefined
+  if (streaming) {
+    ui = renderApp()
+  }
+
+  // 5. Run all agents in parallel
   if (ui) {
     for (const adapter of installed) {
       ui.startAgent(adapter.name)
     }
   }
 
-  const results = await Promise.allSettled(
+  const agentResults = await Promise.allSettled(
     installed.map((adapter) =>
       runSingleAgent(adapter, promptContent, promptFile, options.timeout, ui)
     )
   )
 
-  const runResults: RunResult[] = results
-    .filter((r): r is PromiseFulfilledResult<RunResult> => r.status === "fulfilled")
+  const agentOutputs: AgentRunOutput[] = agentResults
+    .filter((r): r is PromiseFulfilledResult<AgentRunOutput> => r.status === "fulfilled")
     .map((r) => r.value)
 
+  const runResults: RunResult[] = agentOutputs.map((o) => o.result)
+
   // Include errors as failed results
-  for (let i = 0; i < results.length; i++) {
-    const r = results[i]
+  for (let i = 0; i < agentResults.length; i++) {
+    const r = agentResults[i]
     if (r.status === "rejected") {
       const errorResult: RunResult = {
         agent: installed[i].name,
@@ -283,59 +547,45 @@ export async function runLocal(
         timestamp: Date.now(),
       }
       runResults.push(errorResult)
-      if (ui) ui.completeAgent(installed[i].name, { status: "error", duration: 0, fileCount: 0, error: r.reason instanceof Error ? r.reason.message : String(r.reason) })
+      if (ui) ui.completeAgent(installed[i].name, { status: "error", duration: 0, fileSummary: "no files", error: r.reason instanceof Error ? r.reason.message : String(r.reason) })
     }
   }
 
-  // 6. AI Behavioral Evaluation
+  // 6. Deterministic evaluation in sandbox
   const evaluations: EvalResult[] = []
 
-  if (ui) {
-    for (const result of runResults) {
-      const evaluator = pickEvaluator(result.agent, installed)
-      if (!evaluator) continue
+  if (criteria.length > 0) {
+    for (const output of agentOutputs) {
+      const onProgress = ui
+        ? (checked: number, total: number, step: EvalStep) => {
+            ui.updateEvalProgress(output.result.agent, checked, total, step.description)
+          }
+        : undefined
 
-      ui.startEval(result.agent, evaluator.name)
+      if (ui) ui.startEval(output.result.agent)
 
       try {
-        const evalResult = await evaluateRun(promptContent, criteria, result, evaluator)
+        const evalResult = await evaluateInSandbox(
+          output.result.agent,
+          criteria,
+          output.sandbox.dir,
+          onProgress
+        )
         evaluations.push(evalResult)
-        ui.completeEval()
-
-        // Add eval result: score line + grouped sections
-        const self = evalResult.agent === evalResult.evaluator ? chalk.dim(" (self-eval)") : ""
-        const scoreColor = evalResult.score >= 80 ? chalk.green : evalResult.score >= 50 ? chalk.yellow : chalk.red
-        ui.addCompleted(`${evalResult.agent}  ${scoreColor(evalResult.score + "/100")}${self}`)
-
-        // Group steps by their criterion group
-        const groups = new Map<string, EvalStep[]>()
-        for (const step of evalResult.steps) {
-          // Match step to criterion by number to get the group
-          const criterion = criteria.find((c) => c.number === step.number)
-          const group = criterion?.group ?? "General"
-          if (!groups.has(group)) groups.set(group, [])
-          groups.get(group)!.push(step)
-        }
-
-        for (const [group, steps] of groups) {
-          const passed = steps.filter((s) => s.status === "pass").length
-          const total = steps.length
-          const icon = passed === total ? chalk.green("✓")
-            : passed === 0 ? chalk.red("✗")
-            : chalk.yellow("~")
-          ui.addCompleted(`  ${icon} ${group}  ${chalk.dim(passed + "/" + total)}`)
-
-          // Show individual failures within the group
-          if (passed < total) {
-            const failures = steps.filter((s) => s.status !== "pass")
-            for (const step of failures) {
-              ui.addCompleted(`    ${chalk.dim(step.description)}`)
-            }
-          }
-        }
       } catch {
-        ui.completeEval()
+        // Evaluation failed, continue
       }
+
+      if (ui) ui.completeEval()
+      await output.sandbox.destroy()
+    }
+
+    if (ui && evaluations.length > 0) {
+      renderEvalResults(evaluations, ui)
+    }
+  } else {
+    for (const output of agentOutputs) {
+      await output.sandbox.destroy()
     }
   }
 
@@ -353,14 +603,6 @@ export async function runLocal(
 
   // 9. Finish UI
   if (ui) {
-    if (evaluations.length > 0 && runResults.length > 1) {
-      // Summary based on evaluation scores, not exit codes
-      const parts = evaluations.map((e) => {
-        const scoreColor = e.score >= 80 ? chalk.green : e.score >= 50 ? chalk.yellow : chalk.red
-        return `${e.agent} ${scoreColor(e.score + "/100")}`
-      })
-      ui.addCompleted(parts.join("  "))
-    }
     ui.finish()
   }
 

@@ -2,6 +2,7 @@ import { useState, useCallback } from "react"
 import { Box, Text, Static } from "ink"
 import AgentTask from "./AgentTask.js"
 import Spinner from "./Spinner.js"
+import type { ActionType } from "../agents/types.js"
 
 export interface CompletedItem {
   key: string
@@ -9,22 +10,29 @@ export interface CompletedItem {
   color?: string
 }
 
+export interface HistoryEntry {
+  type: ActionType
+  text: string
+}
+
 export interface AgentState {
   name: string
   status: string
-  files: string[]
+  history: HistoryEntry[]
   done: boolean
   result?: {
     status: "pass" | "fail" | "timeout" | "error" | "no-changes"
     duration: number
-    fileCount: number
+    fileSummary: string
     error?: string
   }
 }
 
 export interface EvalState {
   agent: string
-  evaluator: string
+  checked: number
+  total: number
+  description: string
   done: boolean
 }
 
@@ -32,7 +40,6 @@ export interface AppState {
   completed: CompletedItem[]
   agents: Map<string, AgentState>
   eval: EvalState | null
-  activity: string | null
 }
 
 interface AppProps {
@@ -55,22 +62,21 @@ export default function App({ state }: AppProps) {
           key={agent.name}
           name={agent.name}
           status={agent.status}
-          files={agent.files}
+          history={agent.history}
           done={false}
         />
       ))}
 
-      {state.activity && (
-        <Box>
-          <Spinner />
-          <Text dimColor> {state.activity}</Text>
-        </Box>
-      )}
-
       {state.eval && !state.eval.done && (
         <Box>
           <Spinner />
-          <Text> Evaluating {state.eval.agent} with {state.eval.evaluator}...</Text>
+          <Text> Evaluating {state.eval.agent}</Text>
+          {state.eval.total > 0 && (
+            <Text dimColor> [{state.eval.checked}/{state.eval.total}]</Text>
+          )}
+          {state.eval.description && (
+            <Text dimColor>  {state.eval.description}</Text>
+          )}
         </Box>
       )}
     </Box>

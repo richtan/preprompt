@@ -1,16 +1,17 @@
 import React from "react"
 import chalk from "chalk"
 import { render } from "ink"
-import App, { type AppState, type CompletedItem, type AgentState, type EvalState } from "./App.js"
+import App, { type AppState, type CompletedItem, type AgentState, type EvalState, type HistoryEntry } from "./App.js"
+import type { ActionType } from "../agents/types.js"
 
 export interface UIController {
   addCompleted(text: string, color?: string): void
-  setActivity(text: string | null): void
   startAgent(name: string): void
   updateAgentStatus(name: string, status: string): void
-  addAgentFile(name: string, file: string): void
+  addAgentHistory(name: string, type: ActionType, text: string): void
   completeAgent(name: string, result: AgentState["result"]): void
-  startEval(agent: string, evaluator: string): void
+  startEval(agent: string): void
+  updateEvalProgress(agent: string, checked: number, total: number, description: string): void
   completeEval(): void
   finish(): void
 }
@@ -20,7 +21,6 @@ export function renderApp(): UIController {
     completed: [],
     agents: new Map(),
     eval: null,
-    activity: null,
   }
 
   let keyCounter = 0
@@ -39,13 +39,8 @@ export function renderApp(): UIController {
       update()
     },
 
-    setActivity(text: string | null) {
-      state.activity = text
-      update()
-    },
-
     startAgent(name: string) {
-      state.agents.set(name, { name, status: "", files: [], done: false })
+      state.agents.set(name, { name, status: "", history: [], done: false })
       update()
     },
 
@@ -57,25 +52,27 @@ export function renderApp(): UIController {
       }
     },
 
-    addAgentFile(name: string, file: string) {
+    addAgentHistory(name: string, type: ActionType, text: string) {
       const agent = state.agents.get(name)
-      if (agent) {
-        agent.files = [...agent.files, file]
-        update()
-      }
+      if (!agent || agent.done) return
+      const entry: HistoryEntry = { type, text }
+      const last = agent.history[agent.history.length - 1]
+      if (last && last.type === type && last.text === text) return
+      if (agent.history.length >= 15) return
+      agent.history = [...agent.history, entry]
+      update()
     },
 
     completeAgent(name: string, result: AgentState["result"]) {
       const agent = state.agents.get(name)
       if (!agent || !result) return
 
-      // Format result as text lines for Static section (with color)
       const color = result.status === "pass" ? chalk.green
         : result.status === "timeout" ? chalk.yellow
         : chalk.red
-      const icon = result.status === "pass" ? chalk.green("✓")
-        : result.status === "timeout" ? chalk.yellow("~")
-        : chalk.red("✗")
+      const icon = result.status === "pass" ? chalk.green("●")
+        : result.status === "timeout" ? chalk.yellow("●")
+        : chalk.red("●")
       const statusText = result.status === "pass" ? color("passed")
         : result.status === "timeout" ? color("timed out")
         : result.status === "no-changes" ? color("no changes")
@@ -84,20 +81,31 @@ export function renderApp(): UIController {
         ? `${result.duration}ms`
         : `${(result.duration / 1000).toFixed(1)}s`
       const errorSuffix = result.error ? chalk.dim(`  ${result.error}`) : ""
+      const fileSuffix = result.fileSummary ? chalk.dim(`  ${result.fileSummary}`) : ""
 
       state.completed = [
         ...state.completed,
-        { key: String(keyCounter++), text: `${icon} ${name}  ${statusText}  ${chalk.dim(dur)}  ${chalk.dim(result.fileCount + " files")}${errorSuffix}` },
-        ...agent.files.map((f) => ({ key: String(keyCounter++), text: chalk.dim(`    + ${f}`) })),
+        { key: String(keyCounter++), text: `${icon} ${name}  ${statusText}  ${chalk.dim(dur)}${fileSuffix}${errorSuffix}` },
+        ...agent.history.map((h) => {
+          const verb = h.type === "command" ? "run"
+            : h.type === "create" ? "create"
+            : h.type === "edit" ? "edit"
+            : "run"
+          return { key: String(keyCounter++), text: `    ${chalk.bold.dim(verb)} ${chalk.dim(h.text)}` }
+        }),
       ]
 
-      // Remove from dynamic section
       state.agents.delete(name)
       update()
     },
 
-    startEval(agent: string, evaluator: string) {
-      state.eval = { agent, evaluator, done: false }
+    startEval(agent: string) {
+      state.eval = { agent, checked: 0, total: 0, description: "", done: false }
+      update()
+    },
+
+    updateEvalProgress(agent: string, checked: number, total: number, description: string) {
+      state.eval = { agent, checked, total, description, done: false }
       update()
     },
 
@@ -107,7 +115,6 @@ export function renderApp(): UIController {
     },
 
     finish() {
-      // Small delay to let final render complete
       setTimeout(() => unmount(), 50)
     },
   }

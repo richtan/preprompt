@@ -49,7 +49,10 @@ export const aider: AgentAdapter = {
           const lines = buf.split("\n")
           buf = lines.pop() ?? ""
           for (const line of lines) {
-            if (line.trim()) options.onStatus!(line)
+            if (line.trim()) {
+              options.onStatus!(line)
+              options.onAction?.("command", line)
+            }
           }
         })
       }

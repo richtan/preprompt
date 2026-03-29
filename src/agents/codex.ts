@@ -1,11 +1,17 @@
 import { basename } from "node:path"
 import { execa } from "execa"
-import type { AgentAdapter, ExecuteOptions } from "./types.js"
+import type { AgentAdapter, ExecuteOptions, ActionType } from "./types.js"
 import type { AgentInfo, ExecutionResult } from "../types.js"
 
 const STDIN_THRESHOLD = 100_000
 
-function extractStatus(event: any): string | null {
+interface ExtractedAction {
+  status: string
+  actionType: ActionType
+  actionText: string
+}
+
+function extractAction(event: any): ExtractedAction | null {
   if (event.type !== "item.completed") return null
   const item = event.item
   if (!item) return null
@@ -13,20 +19,29 @@ function extractStatus(event: any): string | null {
   switch (item.type) {
     case "agent_message": {
       const text = String(item.text ?? "")
-      return text.length > 60 ? text.slice(0, 57) + "..." : text
+      const short = text.length > 60 ? text.slice(0, 57) + "..." : text
+      return { status: short, actionType: "other", actionText: short }
     }
     case "file_change": {
       const changes = item.changes
       if (Array.isArray(changes) && changes.length > 0) {
         const c = changes[0]
         const name = basename(c.path ?? "file")
-        return c.kind === "add" ? `Creating ${name}` : `Editing ${name}`
+        const isCreate = c.kind === "add"
+        return {
+          status: isCreate ? `Creating ${name}` : `Editing ${name}`,
+          actionType: isCreate ? "create" : "edit",
+          actionText: name,
+        }
       }
-      return "Modifying files..."
+      return { status: "Modifying files...", actionType: "edit", actionText: "files" }
     }
     case "command_execution": {
-      const cmd = String(item.command ?? item.args?.[0] ?? "")
-      return `Running ${cmd.length > 60 ? cmd.slice(0, 57) + "..." : cmd}`
+      let cmd = String(item.command ?? item.args?.[0] ?? "")
+      const shellMatch = cmd.match(/^\/bin\/(?:z|ba)?sh\s+-\w*c\s+(?:'([^']*)'|"([^"]*)"|(\S+))$/)
+      if (shellMatch) cmd = shellMatch[1] ?? shellMatch[2] ?? shellMatch[3] ?? cmd
+      const status = cmd.length > 60 ? `Running ${cmd.slice(0, 57)}...` : `Running ${cmd}`
+      return { status, actionType: "command", actionText: cmd }
     }
     default:
       return null
@@ -86,6 +101,13 @@ export const codex: AgentAdapter = {
 
       let collectedText = ""
 
+      // Raw stdout tap for incremental text parsing (works in any mode)
+      if (options.onStdout && proc.stdout) {
+        proc.stdout.on("data", (chunk: Buffer) => {
+          options.onStdout!(chunk.toString())
+        })
+      }
+
       if (streaming && proc.stdout) {
         let buf = ""
         proc.stdout.on("data", (chunk: Buffer) => {
@@ -97,9 +119,15 @@ export const codex: AgentAdapter = {
             try {
               const event = JSON.parse(line)
 
-              // Extract status
-              const status = extractStatus(event)
-              if (status) options.onStatus!(status)
+              // Extract action
+              const action = extractAction(event)
+              if (action) {
+                options.onStatus!(action.status)
+                // Only log tool actions to history, not agent chatter
+                if (action.actionType !== "other") {
+                  options.onAction?.(action.actionType, action.actionText)
+                }
+              }
 
               // Collect agent messages for stdout
               if (event.type === "item.completed" && event.item?.type === "agent_message") {
