@@ -67,11 +67,11 @@ npx vitest run
 
 ## Publishing
 
-When pushing to main, always patch and publish:
+Push normally. Only patch and publish when the user asks:
 ```bash
 npm version patch && git push && git push --tags
 ```
-GitHub Actions publishes to npm automatically on tag push. Never push without patching.
+GitHub Actions publishes to npm automatically on tag push.
 
 ## Package
 

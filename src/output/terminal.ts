@@ -139,9 +139,7 @@ export function renderEvalResult(evalResult: EvalResult): void {
   if (failures.length > 0) {
     for (const step of failures) {
       const icon = step.status === "partial" ? chalk.yellow("~") : chalk.red("x")
-      const desc = step.description.length > 50
-        ? step.description.slice(0, 47) + "..."
-        : step.description
+      const desc = step.description
       console.log(`  ${icon} ${desc}`)
     }
   }
