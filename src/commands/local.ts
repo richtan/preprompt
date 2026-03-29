@@ -351,9 +351,20 @@ async function runSingleAgent(
   }
 }
 
-function renderEvalResults(evaluations: EvalResult[], ui: UIController): void {
-  ui.addCompleted("")
+function cleanErrorNote(note: string): string {
+  // Take just the first meaningful line, skip stack frames and noise
+  const lines = note.split("\n").map((l) => l.trim()).filter(Boolean)
+  for (const line of lines) {
+    if (line.startsWith("at ") || line.startsWith("^")) continue
+    if (line.startsWith("node:")) continue
+    return line.length > 120 ? line.slice(0, 117) + "..." : line
+  }
+  return lines[0]?.slice(0, 120) ?? note.slice(0, 120)
+}
 
+function renderEvalResults(evaluations: EvalResult[], ui: UIController): void {
+  // Score cards
+  ui.addCompleted("")
   const maxNameLen = Math.max(...evaluations.map((e) => e.agent.length))
 
   for (const evaluation of evaluations) {
@@ -375,27 +386,21 @@ function renderEvalResults(evaluations: EvalResult[], ui: UIController): void {
     ui.addCompleted(`${icon} ${chalk.bold(name)}  ${score}  ${passText}${failText}`)
   }
 
+  // Failures
   const agentsWithFailures = evaluations.filter((e) =>
     e.steps.some((s) => s.status === "fail")
   )
 
   if (agentsWithFailures.length > 0) {
     ui.addCompleted("")
-
     for (const evaluation of agentsWithFailures) {
-      ui.addCompleted(chalk.bold(evaluation.agent))
-
       for (const step of evaluation.steps) {
         if (step.status !== "fail") continue
-
-        ui.addCompleted(`  ${chalk.red("●")} ${step.description}`)
-        if (step.note) {
-          ui.addCompleted(chalk.dim(`    ${step.note}`))
-        }
+        const note = step.note ? chalk.dim(` ${cleanErrorNote(step.note)}`) : ""
+        ui.addCompleted(`  ${chalk.red("●")} ${chalk.dim(evaluation.agent)} ${step.description}${note}`)
       }
     }
   }
-
   ui.addCompleted("")
 }
 
@@ -488,11 +493,11 @@ export async function runLocal(
     if (!streaming) break // auto-approve in non-interactive modes
 
     // Display criteria (track lines for clearing on revision)
-    console.log(`${chalk.green("●")} ${criteria.length} criteria generated`)
     console.log("")
     const criteriaLines = displayCriteria(criteria)
     console.log("")
-    displayedLines = 1 + 1 + criteriaLines + 1 // header + blank + criteria + blank
+    console.log(`${chalk.green("●")} ${criteria.length} criteria generated`)
+    displayedLines = 1 + criteriaLines + 1 + 1 // blank + criteria + blank + summary
 
     // Interactive approval
     const result = await promptCriteriaApproval()
@@ -512,34 +517,53 @@ export async function runLocal(
     ui = renderApp()
   }
 
-  // 5. Run all agents in parallel
+  // 5. Run all agents in parallel, evaluate each immediately after completion
   if (ui) {
     for (const adapter of installed) {
       ui.startAgent(adapter.name)
     }
   }
 
-  const agentResults = await Promise.allSettled(
-    installed.map((adapter) =>
-      runSingleAgent(adapter, promptContent, promptFile, options.timeout, ui)
-    )
-  )
+  const runResults: RunResult[] = []
+  const evaluations: EvalResult[] = []
 
-  const agentOutputs: AgentRunOutput[] = agentResults
-    .filter((r): r is PromiseFulfilledResult<AgentRunOutput> => r.status === "fulfilled")
-    .map((r) => r.value)
+  async function runAndEvaluate(adapter: AgentAdapter): Promise<void> {
+    try {
+      const { result, sandbox } = await runSingleAgent(
+        adapter, promptContent, promptFile, options.timeout, ui
+      )
+      runResults.push(result)
 
-  const runResults: RunResult[] = agentOutputs.map((o) => o.result)
+      // Evaluate immediately in the agent's sandbox
+      if (criteria.length > 0) {
+        const onProgress = ui
+          ? (checked: number, total: number, step: EvalStep) => {
+              ui.updateEvalProgress(result.agent, checked, total, step.description)
+            }
+          : undefined
 
-  // Include errors as failed results
-  for (let i = 0; i < agentResults.length; i++) {
-    const r = agentResults[i]
-    if (r.status === "rejected") {
+        if (ui) ui.startEval(result.agent)
+
+        try {
+          const evalResult = await evaluateInSandbox(
+            result.agent, criteria, sandbox.dir, onProgress
+          )
+          evaluations.push(evalResult)
+        } catch {
+          // Evaluation failed
+        }
+
+        if (ui) ui.completeEval()
+      }
+
+      await sandbox.destroy()
+    } catch (error) {
+      // Agent failed to run
       const errorResult: RunResult = {
-        agent: installed[i].name,
+        agent: adapter.name,
         prompt: promptFile ?? "(inline)",
         workdir: "",
-        execution: { exitCode: 1, stdout: "", stderr: r.reason instanceof Error ? r.reason.message : String(r.reason), duration: 0 },
+        execution: { exitCode: 1, stdout: "", stderr: error instanceof Error ? error.message : String(error), duration: 0 },
         before: { files: [], timestamp: 0 },
         after: { files: [], timestamp: 0 },
         diff: { added: [], modified: [], deleted: [] },
@@ -547,46 +571,15 @@ export async function runLocal(
         timestamp: Date.now(),
       }
       runResults.push(errorResult)
-      if (ui) ui.completeAgent(installed[i].name, { status: "error", duration: 0, fileSummary: "no files", error: r.reason instanceof Error ? r.reason.message : String(r.reason) })
+      if (ui) ui.completeAgent(adapter.name, { status: "error", duration: 0, fileSummary: "no files", error: error instanceof Error ? error.message : String(error) })
     }
   }
 
-  // 6. Deterministic evaluation in sandbox
-  const evaluations: EvalResult[] = []
+  await Promise.allSettled(installed.map((adapter) => runAndEvaluate(adapter)))
 
-  if (criteria.length > 0) {
-    for (const output of agentOutputs) {
-      const onProgress = ui
-        ? (checked: number, total: number, step: EvalStep) => {
-            ui.updateEvalProgress(output.result.agent, checked, total, step.description)
-          }
-        : undefined
-
-      if (ui) ui.startEval(output.result.agent)
-
-      try {
-        const evalResult = await evaluateInSandbox(
-          output.result.agent,
-          criteria,
-          output.sandbox.dir,
-          onProgress
-        )
-        evaluations.push(evalResult)
-      } catch {
-        // Evaluation failed, continue
-      }
-
-      if (ui) ui.completeEval()
-      await output.sandbox.destroy()
-    }
-
-    if (ui && evaluations.length > 0) {
-      renderEvalResults(evaluations, ui)
-    }
-  } else {
-    for (const output of agentOutputs) {
-      await output.sandbox.destroy()
-    }
+  // Show results after all agents done
+  if (ui && evaluations.length > 0) {
+    renderEvalResults(evaluations, ui)
   }
 
   // 7. Build multi-run result
