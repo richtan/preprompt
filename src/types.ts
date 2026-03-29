@@ -41,8 +41,26 @@ export interface RunResult {
   timestamp: number
 }
 
+export interface EvalStep {
+  number: number
+  description: string
+  status: "pass" | "fail" | "partial"
+  note?: string
+}
+
+export interface EvalResult {
+  agent: string
+  evaluator: string
+  steps: EvalStep[]
+  score: number
+  summary: string
+  issues: string[]
+  duration: number
+}
+
 export interface MultiRunResult {
   prompt: string
   results: RunResult[]
+  evaluations?: EvalResult[]
   timestamp: number
 }

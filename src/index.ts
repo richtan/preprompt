@@ -31,23 +31,16 @@ program
     "--agents <names>",
     "Comma-separated list of agents to use (e.g. claude-code,codex)"
   )
-  .option(
-    "--check <assertion>",
-    "Assertion to verify (e.g. file-exists:package.json). Repeatable.",
-    (val: string, prev: string[]) => [...prev, val],
-    [] as string[]
-  )
   .action(
     async (
       prompt: string,
-      opts: { timeout: string; json: boolean; quiet: boolean; agents?: string; check: string[] }
+      opts: { timeout: string; json: boolean; quiet: boolean; agents?: string }
     ) => {
       await runLocal(prompt, {
         timeout: parseInt(opts.timeout, 10),
         json: opts.json,
         quiet: opts.quiet,
         agents: opts.agents,
-        check: opts.check.length > 0 ? opts.check : undefined,
       })
     }
   )
@@ -232,16 +225,10 @@ program
     "--agents <names>",
     "Comma-separated list of agents to use (e.g. claude-code,codex)"
   )
-  .option(
-    "--check <assertion>",
-    "Assertion to verify (repeatable)",
-    (val: string, prev: string[]) => [...prev, val],
-    [] as string[]
-  )
   .action(
     async (
       prompt: string | undefined,
-      opts: { timeout: string; json: boolean; quiet: boolean; agents?: string; check: string[] }
+      opts: { timeout: string; json: boolean; quiet: boolean; agents?: string }
     ) => {
       if (!prompt) {
         program.help()
@@ -252,7 +239,6 @@ program
         json: opts.json,
         quiet: opts.quiet,
         agents: opts.agents,
-        check: opts.check.length > 0 ? opts.check : undefined,
       })
     }
   )

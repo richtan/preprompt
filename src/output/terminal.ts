@@ -1,6 +1,5 @@
 import chalk from "chalk"
-import type { RunResult, MultiRunResult, AgentInfo } from "../types.js"
-import type { CheckResult, Check } from "../checks.js"
+import type { RunResult, MultiRunResult, AgentInfo, EvalResult } from "../types.js"
 import type { MatrixAnalysis } from "../matrix.js"
 
 export function renderAgentList(agents: AgentInfo[]): void {
@@ -124,20 +123,19 @@ export function renderDiff(multi: MultiRunResult): void {
   }
 }
 
-export function renderCheckResults(results: CheckResult[]): void {
-  if (results.length === 0) return
-
-  console.log(chalk.green("Checking") + ` ${results.length} assertion${results.length === 1 ? "" : "s"}...`)
-
-  for (const r of results) {
-    const label = r.passed ? chalk.green("pass") : chalk.red("fail")
-    console.log(`  ${label}  ${formatCheck(r.check)}` + chalk.dim(` (${r.agent})`))
+export function renderEvalResult(evalResult: EvalResult): void {
+  for (const step of evalResult.steps) {
+    const icon = step.status === "pass" ? chalk.green("pass")
+      : step.status === "partial" ? chalk.yellow("part")
+      : chalk.red("fail")
+    const note = step.note && step.status !== "pass" ? chalk.dim(`  ${step.note}`) : ""
+    console.log(`  ${step.number}. ${step.description.padEnd(30)} ${icon}${note}`)
   }
 
-  const passed = results.filter((r) => r.passed).length
-  const failed = results.length - passed
-  console.log()
-  console.log(`${passed} passed, ${failed} failed`)
+  const passed = evalResult.steps.filter((s) => s.status === "pass").length
+  const total = evalResult.steps.length
+  const self = evalResult.agent === evalResult.evaluator ? chalk.dim(" (self-eval)") : ""
+  console.log(`${evalResult.agent}  ${evalResult.score}/100  ${passed}/${total} steps${self}`)
 }
 
 export function renderError(message: string): void {
@@ -177,17 +175,6 @@ function formatSummary(results: RunResult[]): string {
   if (failed > 0) parts.push(`${failed} failed`)
   if (other > 0) parts.push(`${other} other`)
   return parts.join(", ")
-}
-
-function formatCheck(check: Check): string {
-  switch (check.type) {
-    case "file-exists": return `file-exists:${check.path}`
-    case "file-not-exists": return `file-not-exists:${check.path}`
-    case "dir-exists": return `dir-exists:${check.path}`
-    case "file-contains": return `file-contains:${check.path}:${check.value ?? ""}`
-    case "exit-ok": return "exit-ok"
-    default: return String(check.type)
-  }
 }
 
 function formatDuration(ms: number): string {

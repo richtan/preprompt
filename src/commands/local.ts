@@ -11,25 +11,24 @@ import {
   renderError,
   renderWarning,
   renderAgentList,
-  renderCheckResults,
+  renderEvalResult,
   renderMatrixAnalysis,
 } from "../output/terminal.js"
 import { saveMultiResult } from "../storage.js"
 import { scanPrompt } from "../scanner.js"
 import { analyzePrompt } from "../matrix.js"
-import { parseInlineCheck, runChecks, allChecksPassed, type Check, type CheckResult } from "../checks.js"
 import {
   clearEvents, setStreamMode, startExecutionSpinner, stopSpinner,
-  emitFileChange, emitOverflowCount, emitDone,
+  emitFileChange, emitOverflowCount, emitDone, printLine,
 } from "../output/stream.js"
 import { getErrorHint, extractErrorSummary } from "../errors.js"
-import type { RunResult, MultiRunResult, Snapshot } from "../types.js"
+import { evaluateRun, pickEvaluator } from "../evaluate.js"
+import type { RunResult, MultiRunResult, EvalResult, Snapshot } from "../types.js"
 
 export interface LocalOptions {
   timeout: number
   json: boolean
   agents?: string
-  check?: string[]
   quiet?: boolean
 }
 
@@ -313,48 +312,55 @@ export async function runLocal(
     }
   }
 
-  // 5. Build multi-run result
-  const multiResult: MultiRunResult = {
-    prompt: promptFile ?? "(inline)",
-    results: runResults,
-    timestamp: Date.now(),
-  }
+  // 5. AI Behavioral Evaluation
+  const evaluations: EvalResult[] = []
 
-  // 6. Save
-  await saveMultiResult(multiResult)
+  if (!options.quiet) {
+    for (const result of runResults) {
+      const evaluator = pickEvaluator(result.agent, installed)
+      if (!evaluator) continue
 
-  // 7. Run checks if specified
-  const checks: Check[] = []
-  if (options.check) {
-    for (const raw of options.check) {
+      if (streaming) {
+        const self = evaluator.name === result.agent ? " (self)" : ""
+        startExecutionSpinner(`Evaluating ${result.agent} with ${evaluator.name}${self}...`)
+      }
+
       try {
-        checks.push(parseInlineCheck(raw))
+        const evalResult = await evaluateRun(promptContent, result, evaluator)
+        evaluations.push(evalResult)
       } catch {
-        renderError(`Invalid check: ${raw}`)
-        process.exitCode = 1
-        return
+        // Evaluation failed, continue without it
+      }
+
+      if (streaming) stopSpinner()
+
+      // Render evaluation inline
+      if (streaming && evaluations.length > 0) {
+        const latest = evaluations[evaluations.length - 1]
+        renderEvalResult(latest)
       }
     }
   }
 
-  let checkResults: CheckResult[] = []
-  if (checks.length > 0) {
-    for (const result of runResults) {
-      checkResults.push(...runChecks(checks, result))
-    }
+  // 6. Build multi-run result
+  const multiResult: MultiRunResult = {
+    prompt: promptFile ?? "(inline)",
+    results: runResults,
+    evaluations: evaluations.length > 0 ? evaluations : undefined,
+    timestamp: Date.now(),
   }
+
+  // 7. Save
+  await saveMultiResult(multiResult)
 
   // 8. Render
   if (options.quiet) {
     // Quiet mode: only exit code matters
   } else if (options.json) {
-    const output = checks.length > 0
-      ? { ...multiResult, checks: checkResults }
-      : multiResult
-    console.log(JSON.stringify(output, null, 2))
+    console.log(JSON.stringify(multiResult, null, 2))
   } else if (streaming) {
-    // Streaming already showed per-agent results live.
-    // Only print the summary line for multi-agent, and checks.
+    // Streaming already showed per-agent results + evaluations live.
+    // Just print the summary.
     if (runResults.length > 1) {
       console.log()
       const passed = runResults.filter((r) => r.status === "pass").length
@@ -366,19 +372,21 @@ export async function runLocal(
       if (other > 0) parts.push(`${other} other`)
       console.log(parts.join(", "))
     }
-    if (checkResults.length > 0) renderCheckResults(checkResults)
   } else {
     if (runResults.length === 1) {
       renderRunResult(runResults[0])
     } else {
       renderMultiRunSummary(multiResult)
     }
-    if (checkResults.length > 0) renderCheckResults(checkResults)
+    for (const evalResult of evaluations) {
+      renderEvalResult(evalResult)
+    }
   }
 
-  // 9. Exit code
-  if (checks.length > 0) {
-    process.exitCode = allChecksPassed(checkResults) ? 0 : 1
+  // 9. Exit code based on evaluation scores
+  if (evaluations.length > 0) {
+    const anyFail = evaluations.some((e) => e.steps.some((s) => s.status === "fail"))
+    process.exitCode = anyFail ? 1 : 0
   } else {
     const anyFailed = runResults.some(
       (r) => r.status === "fail" || r.status === "timeout" || r.status === "error"
