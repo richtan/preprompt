@@ -291,25 +291,37 @@ async function runSingleAgent(
       }
     : undefined
 
-  // Resolve real path for stripping (macOS: /tmp → /private/var/folders/...)
-  const sandboxPaths = [sandbox.dir]
+  // Build all possible representations of the sandbox path for stripping.
+  // On macOS, paths can appear as /var/folders/..., /private/var/folders/...,
+  // /tmp/..., or /private/tmp/... depending on which tool resolves them.
+  const sandboxPaths = new Set<string>()
+  sandboxPaths.add(sandbox.dir)
   try {
-    const real = await import("node:fs").then((fs) => fs.realpathSync(sandbox.dir))
-    if (real !== sandbox.dir) sandboxPaths.push(real)
+    const fs = await import("node:fs")
+    const real = fs.realpathSync(sandbox.dir)
+    sandboxPaths.add(real)
+    // Add /private-prefixed and /private-stripped variants
+    for (const p of [...sandboxPaths]) {
+      if (p.startsWith("/private/")) sandboxPaths.add(p.slice("/private".length))
+      else sandboxPaths.add("/private" + p)
+    }
   } catch {}
+  // Sort longest first so longer paths match before shorter substrings
+  const sortedPaths = [...sandboxPaths].sort((a, b) => b.length - a.length)
+
+  const MAX_CMD_LEN = 120
 
   const onAction = ui
     ? (type: ActionType, text: string) => {
         let clean = text
-        for (const p of sandboxPaths) {
+        for (const p of sortedPaths) {
           clean = clean.replaceAll(p + "/", "").replaceAll(p, ".")
         }
-        // Strip preprompt temp file references (e.g. /tmp/preprompt-8mlw1h-server.log → server.log)
-        clean = clean.replace(/\/tmp\/preprompt-[a-z0-9]+-/g, "")
-        clean = clean.replace(/\/tmp\/preprompt-[a-z0-9]+\b/g, ".")
         // Use first line only for multi-line commands
-        const firstLine = clean.split("\n")[0]
-        ui.addAgentHistory(agentName, type, firstLine)
+        clean = clean.split("\n")[0]
+        // Truncate long commands as a universal safety net
+        if (clean.length > MAX_CMD_LEN) clean = clean.slice(0, MAX_CMD_LEN - 3) + "..."
+        ui.addAgentHistory(agentName, type, clean)
       }
     : undefined
 
