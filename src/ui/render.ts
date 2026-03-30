@@ -108,7 +108,7 @@ export function renderApp(): UIController {
           const prefix = h.type === "create" ? chalk.green("+")
             : h.type === "edit" ? chalk.yellow("~")
             : chalk.dim(">")
-          return { key: String(keyCounter++), text: `    ${prefix} ${chalk.dim(h.text)}` }
+          return { key: String(keyCounter++), text: `    ${prefix} ${h.text}` }
         }),
       ]
 

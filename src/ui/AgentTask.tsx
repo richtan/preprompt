@@ -54,14 +54,14 @@ export default function AgentTask({ name, history, result, checking }: AgentTask
       {past.map((h, i) => {
         const p = historyPrefix(h.type)
         return (
-          <Text key={`h-${i}`}>    <Text color={p.color || undefined} dimColor={!p.color}>{p.char}</Text> <Text dimColor>{h.text}</Text></Text>
+          <Text key={`h-${i}`}>    <Text color={p.color || undefined} dimColor={!p.color}>{p.char}</Text> {h.text}</Text>
         )
       })}
       {current && (
         <Box>
           <Text>    </Text>
           <Spinner />
-          <Text> <Text dimColor>{current.text}</Text></Text>
+          <Text> {current.text}</Text>
         </Box>
       )}
     </Box>

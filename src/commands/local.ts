@@ -101,7 +101,7 @@ function displayCriteria(criteria: Criterion[]): number {
     console.log(`  ${chalk.bold(group)} ${chalk.dim(`(${items.length})`)}`)
     lines++
     for (const c of items) {
-      console.log(chalk.dim(`    - ${c.description}`))
+      console.log(`    ${chalk.dim("-")} ${c.description}`)
       lines++
     }
   }
@@ -391,23 +391,17 @@ function renderEvalResults(evaluations: EvalResult[], ui: UIController): void {
     const failed = evaluation.steps.filter((s) => s.status === "fail").length
 
     const hasFails = failed > 0
-    const scoreColor = hasFails ? chalk.red
-      : evaluation.score >= 80 ? chalk.green
-      : evaluation.score >= 50 ? chalk.yellow
-      : chalk.red
-
     const name = evaluation.agent.padEnd(maxNameLen)
-    const score = scoreColor(`${evaluation.score}/100`)
     const statusText = hasFails
       ? chalk.red(`${failed} failed`)
       : chalk.green(`0 failed`)
 
-    lines.push(`${chalk.bold(name)}  ${score}  ${statusText}`)
+    lines.push(`${chalk.bold(name)}  ${statusText}`)
 
     for (const step of evaluation.steps) {
       if (step.status !== "fail") continue
-      const note = step.note ? `  ${cleanErrorNote(step.note)}` : ""
-      lines.push(`    ${chalk.red("-")} ${chalk.dim(step.description + note)}`)
+      const note = step.note ? chalk.dim(`  ${cleanErrorNote(step.note)}`) : ""
+      lines.push(`    ${chalk.red("-")} ${step.description}${note}`)
     }
   }
 
