@@ -29,7 +29,6 @@ packages/
         detector.ts         Auto-detect installed agents
         claude-code.ts      Claude Code adapter
         codex.ts            Codex adapter
-        aider.ts            Aider adapter
         copilot.ts          GitHub Copilot CLI adapter
       sandbox/
         manager.ts          Temp directory lifecycle (create/destroy)
@@ -73,7 +72,7 @@ npx vitest run          # From packages/cli
 
 ## Architecture
 
-- 4 agent adapters (claude-code, codex, aider, copilot-cli)
+- 3 agent adapters (claude-code, codex, copilot-cli)
 - Parallel execution via Promise.allSettled
 - Sandbox uses Node built-in `fs.mkdtemp()`, no tmp-promise
 - Prompt >100KB piped via stdin to avoid shell arg limits

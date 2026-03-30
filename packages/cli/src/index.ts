@@ -21,6 +21,8 @@ program
   .name("preprompt")
   .description("Test any prompt on every AI tool.")
   .version("0.1.0")
+  .enablePositionalOptions()
+  .passThroughOptions()
 
 program
   .command("local <prompt>")

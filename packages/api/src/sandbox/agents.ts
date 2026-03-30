@@ -4,7 +4,6 @@
 export const AGENT_TEMPLATES: Record<string, string> = {
   "claude-code": "preprompt-claude-code",
   "codex": "preprompt-codex",
-  "aider": "preprompt-aider",
   "copilot": "base", // No pre-built template yet
 }
 
@@ -18,6 +17,5 @@ export const AGENT_SETUP: Record<string, string[]> = {
 export const AGENT_EXEC: Record<string, (promptPath: string) => string> = {
   "claude-code": (p) => `cat ${p} | claude --print --dangerously-skip-permissions --output-format text`,
   "codex": (p) => `codex exec --full-auto --skip-git-repo-check "$(cat ${p})"`,
-  "aider": (p) => `aider --yes-always --no-git --model claude-3-5-sonnet --message "$(cat ${p})"`,
   "copilot": (p) => `gh copilot suggest -t shell "$(cat ${p})"`,
 }

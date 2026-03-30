@@ -32,7 +32,6 @@ You need at least one agent showing "ready". If none are found, install one:
 
 - Claude Code: `npm install -g @anthropic-ai/claude-code` then `claude login`
 - Codex: `npm install -g @openai/codex` then `codex login`
-- Aider: `pip install aider-chat`
 - GitHub Copilot CLI: `gh extension install github/gh-copilot`
 
 Run a quick test to confirm everything works:

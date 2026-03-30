@@ -61,31 +61,6 @@ const profiles: AgentProfile[] = [
     nonInteractive: "codex exec <prompt> --full-auto",
   },
   {
-    name: "aider",
-    fullName: "Aider (Open Source)",
-    description:
-      "Open source AI pair programmer. Works with any LLM. Best for code editing in existing repos.",
-    strengths: [
-      "Works with any LLM provider (OpenAI, Anthropic, local)",
-      "Excellent git integration",
-      "Good at editing existing files",
-      "Lightweight and fast to start",
-    ],
-    weaknesses: [
-      "Designed for editing, not project setup from scratch",
-      "Requires a git repo to work properly",
-      "May struggle with from-scratch file creation",
-    ],
-    quirks: [
-      "Prefers to edit existing files over creating new ones",
-      "Uses --yes-always for non-interactive mode",
-      "Needs --no-git flag when running outside a real repo",
-      "May use pages/ directory for Next.js (Pages Router)",
-    ],
-    invocation: "aider --message <prompt>",
-    nonInteractive: "aider --yes-always --no-git --message <prompt>",
-  },
-  {
     name: "copilot-cli",
     fullName: "GitHub Copilot CLI",
     description:

@@ -86,7 +86,6 @@ function shortName(agent: string): string {
   const map: Record<string, string> = {
     "claude-code": "Claude",
     codex: "Codex",
-    aider: "Aider",
     "copilot-cli": "Copilot",
   }
   return map[agent] ?? agent

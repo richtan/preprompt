@@ -6,7 +6,7 @@ Test any prompt on every AI tool. One command, every agent, see what happened.
 preprompt CLAUDE.md
 ```
 
-PrePrompt runs your AI instructions through coding agents (Claude Code, Codex, Aider, etc.) in clean sandboxes and shows you exactly what each agent did, files created, commands run, pass or fail.
+PrePrompt runs your AI instructions through coding agents (Claude Code, Codex, etc.) in clean sandboxes and shows you exactly what each agent did, files created, commands run, pass or fail.
 
 ## Install
 
@@ -104,7 +104,6 @@ codex        1 failed
 |-------|--------|
 | Claude Code | Supported |
 | Codex | Supported |
-| Aider | Supported |
 | GitHub Copilot CLI | Supported |
 
 ## How it works

@@ -7,7 +7,6 @@ export function renderAgentList(agents: AgentInfo[]): void {
     console.error(chalk.red("error:") + " No agents found. Install one:")
     console.log("  npm install -g @anthropic-ai/claude-code")
     console.log("  npm install -g @openai/codex")
-    console.log("  pip install aider-chat")
     console.log("  gh extension install github/gh-copilot")
     return
   }

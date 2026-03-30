@@ -7,7 +7,7 @@ import type { SandboxProvider } from "../sandbox/provider.js"
 
 export const runs = new Hono()
 
-const KNOWN_AGENTS = ["claude-code", "codex", "aider", "copilot"]
+const KNOWN_AGENTS = ["claude-code", "codex", "copilot"]
 const MAX_PROMPT_SIZE = 500 * 1024 // 500KB
 
 // Lazy-load E2B to avoid CJS/ESM conflicts in test

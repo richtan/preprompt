@@ -395,29 +395,6 @@ function cleanErrorNote(note: string): string {
   return lines[0]?.slice(0, 120) ?? note.slice(0, 120)
 }
 
-function renderEvalResults(evaluations: EvalResult[], ui: UIController): void {
-  const maxNameLen = Math.max(...evaluations.map((e) => e.agent.length))
-  const lines: string[] = [" "] // blank line separator
-
-  for (const evaluation of evaluations) {
-    const failed = evaluation.steps.filter((s) => s.status === "fail").length
-
-    const hasFails = failed > 0
-    const name = evaluation.agent.padEnd(maxNameLen)
-    const statusText = hasFails
-      ? chalk.red(`${failed} failed`)
-      : chalk.green(`0 failed`)
-
-    lines.push(`${chalk.bold(name)}  ${statusText}`)
-
-    for (const step of evaluation.steps) {
-      if (step.status !== "fail") continue
-      lines.push(`    ${chalk.red("-")} ${step.description}`)
-    }
-  }
-
-  ui.addCompletedBatch(lines)
-}
 
 export async function runLocal(
   promptInput: string,
@@ -565,6 +542,7 @@ export async function runLocal(
             result.agent, criteria, sandbox.dir, undefined, onStepStart
           )
           evaluations.push(evalResult)
+          if (ui) ui.setAgentEval(result.agent, evalResult)
         } catch {
           // Evaluation failed
         }
@@ -595,9 +573,13 @@ export async function runLocal(
 
   await Promise.allSettled(installed.map((adapter) => runAndEvaluate(adapter)))
 
-  // Show results after all agents done
+  // Summary line after all agents done
   if (ui && evaluations.length > 0) {
-    renderEvalResults(evaluations, ui)
+    const totalChecks = evaluations.reduce((sum, e) => sum + e.steps.length, 0)
+    ui.addCompletedBatch([
+      " ",
+      `${chalk.green("Evaluated")} ${totalChecks} checks across ${evaluations.length} agents`,
+    ])
   }
 
   // 7. Build multi-run result

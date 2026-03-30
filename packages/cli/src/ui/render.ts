@@ -3,6 +3,7 @@ import chalk from "chalk"
 import { render } from "ink"
 import App, { type AppState, type CompletedItem, type AgentState, type HistoryEntry } from "./App.js"
 import type { ActionType } from "../agents/types.js"
+import type { EvalResult } from "../types.js"
 
 export interface UIController {
   addCompleted(text: string, color?: string): void
@@ -12,6 +13,7 @@ export interface UIController {
   addAgentHistory(name: string, type: ActionType, text: string): void
   setAgentResult(name: string, result: AgentState["result"]): void
   setAgentChecking(name: string, index: number, total: number): void
+  setAgentEval(name: string, evalResult: EvalResult): void
   completeAgent(name: string): void
   finish(): void
 }
@@ -23,6 +25,7 @@ export function renderApp(): UIController {
   }
 
   let keyCounter = 0
+  const evalResults = new Map<string, EvalResult>()
 
   const { rerender, unmount } = render(
     React.createElement(App, { state })
@@ -84,6 +87,10 @@ export function renderApp(): UIController {
       update()
     },
 
+    setAgentEval(name: string, evalResult: EvalResult) {
+      evalResults.set(name, evalResult)
+    },
+
     completeAgent(name: string) {
       const agent = state.agents.get(name)
       if (!agent) return
@@ -93,15 +100,40 @@ export function renderApp(): UIController {
       const dur = result.duration < 1000
         ? `${result.duration}ms`
         : `${(result.duration / 1000).toFixed(1)}s`
-      const statusSuffix = result.status === "timeout" ? chalk.yellow("  timed out")
-        : result.status === "no-changes" ? chalk.dim("  no changes")
-        : result.status === "error" || result.status === "fail"
-          ? chalk.red("  failed") + (result.error ? chalk.dim(`  ${result.error}`) : "")
-        : ""
+
+      // Build status suffix from eval results if available, otherwise from execution status
+      const evaluation = evalResults.get(name)
+      let statusSuffix: string
+
+      if (evaluation) {
+        const failed = evaluation.steps.filter((s) => s.status === "fail").length
+        statusSuffix = failed > 0
+          ? `  ${chalk.red(`${failed} failed`)}`
+          : `  ${chalk.green("0 failed")}`
+      } else if (result.status === "timeout") {
+        statusSuffix = chalk.yellow("  timed out")
+      } else if (result.status === "no-changes") {
+        statusSuffix = chalk.dim("  no changes")
+      } else if (result.status === "error" || result.status === "fail") {
+        statusSuffix = chalk.red("  failed") + (result.error ? chalk.dim(`  ${result.error}`) : "")
+      } else {
+        statusSuffix = ""
+      }
+
+      // Build failure detail lines
+      const failureLines: CompletedItem[] = []
+      if (evaluation) {
+        for (const step of evaluation.steps) {
+          if (step.status !== "fail") continue
+          failureLines.push({
+            key: String(keyCounter++),
+            text: `    ${chalk.red("-")} ${step.description}`,
+          })
+        }
+      }
 
       state.completed = [
         ...state.completed,
-        // Blank line between agent blocks
         ...(state.completed.length > 0 ? [{ key: String(keyCounter++), text: " " }] : []),
         { key: String(keyCounter++), text: `${chalk.bold(name)}  ${chalk.dim(dur)}${statusSuffix}` },
         ...agent.history.map((h) => {
@@ -110,6 +142,7 @@ export function renderApp(): UIController {
             : chalk.dim(">")
           return { key: String(keyCounter++), text: `    ${prefix} ${h.text}` }
         }),
+        ...failureLines,
       ]
 
       state.agents.delete(name)
