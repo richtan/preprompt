@@ -29,17 +29,15 @@ function formatDur(ms: number): string {
   return `${(ms / 1000).toFixed(1)}s`
 }
 
-function historyVerb(type: ActionType): string {
+function historyPrefix(type: ActionType): { char: string; color: string } {
   switch (type) {
-    case "command": return "run"
-    case "create": return "create"
-    case "edit": return "edit"
-    default: return "run"
+    case "create": return { char: "+", color: "green" }
+    case "edit": return { char: "~", color: "yellow" }
+    default: return { char: ">", color: "" }
   }
 }
 
 export default function AgentTask({ name, history, result, checking }: AgentTaskProps) {
-  // During checking phase, all history is past (no spinner on last item)
   const past = checking ? history : history.slice(0, -1)
   const current = checking ? null : (history.length > 0 ? history[history.length - 1] : null)
 
@@ -53,14 +51,17 @@ export default function AgentTask({ name, history, result, checking }: AgentTask
           <Text dimColor>  checking [{checking.index}/{checking.total}]</Text>
         )}
       </Box>
-      {past.map((h, i) => (
-        <Text key={`h-${i}`}>    <Text color="green">●</Text> {historyVerb(h.type)} <Text dimColor>{h.text}</Text></Text>
-      ))}
+      {past.map((h, i) => {
+        const p = historyPrefix(h.type)
+        return (
+          <Text key={`h-${i}`}>    <Text color={p.color || undefined} dimColor={!p.color}>{p.char}</Text> <Text dimColor>{h.text}</Text></Text>
+        )
+      })}
       {current && (
         <Box>
           <Text>    </Text>
           <Spinner />
-          <Text> {historyVerb(current.type)} <Text dimColor>{current.text}</Text></Text>
+          <Text> <Text dimColor>{current.text}</Text></Text>
         </Box>
       )}
     </Box>

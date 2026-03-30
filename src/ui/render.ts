@@ -90,32 +90,25 @@ export function renderApp(): UIController {
       const result = agent.result
       if (!result) return
 
-      const color = result.status === "pass" ? chalk.green
-        : result.status === "timeout" ? chalk.yellow
-        : chalk.red
-      const icon = result.status === "pass" ? chalk.green("●")
-        : result.status === "timeout" ? chalk.yellow("●")
-        : chalk.red("●")
-      const statusText = result.status === "pass" ? color("done")
-        : result.status === "timeout" ? color("timed out")
-        : result.status === "no-changes" ? color("no changes")
-        : color("failed")
       const dur = result.duration < 1000
         ? `${result.duration}ms`
         : `${(result.duration / 1000).toFixed(1)}s`
-      const errorSuffix = result.error ? chalk.dim(`  ${result.error}`) : ""
+      const statusSuffix = result.status === "timeout" ? chalk.yellow("  timed out")
+        : result.status === "no-changes" ? chalk.dim("  no changes")
+        : result.status === "error" || result.status === "fail"
+          ? chalk.red("  failed") + (result.error ? chalk.dim(`  ${result.error}`) : "")
+        : ""
 
       state.completed = [
         ...state.completed,
         // Blank line between agent blocks
         ...(state.completed.length > 0 ? [{ key: String(keyCounter++), text: " " }] : []),
-        { key: String(keyCounter++), text: `${icon} ${name}  ${statusText}  ${chalk.dim(dur)}${errorSuffix}` },
+        { key: String(keyCounter++), text: `${chalk.bold(name)}  ${chalk.dim(dur)}${statusSuffix}` },
         ...agent.history.map((h) => {
-          const verb = h.type === "command" ? "run"
-            : h.type === "create" ? "create"
-            : h.type === "edit" ? "edit"
-            : "run"
-          return { key: String(keyCounter++), text: `    ${chalk.green("●")} ${verb} ${chalk.dim(h.text)}` }
+          const prefix = h.type === "create" ? chalk.green("+")
+            : h.type === "edit" ? chalk.yellow("~")
+            : chalk.dim(">")
+          return { key: String(keyCounter++), text: `    ${prefix} ${chalk.dim(h.text)}` }
         }),
       ]
 

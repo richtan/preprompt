@@ -395,10 +395,6 @@ function renderEvalResults(evaluations: EvalResult[], ui: UIController): void {
       : evaluation.score >= 80 ? chalk.green
       : evaluation.score >= 50 ? chalk.yellow
       : chalk.red
-    const icon = hasFails ? chalk.red("●")
-      : evaluation.score >= 80 ? chalk.green("●")
-      : evaluation.score >= 50 ? chalk.yellow("●")
-      : chalk.red("●")
 
     const name = evaluation.agent.padEnd(maxNameLen)
     const score = scoreColor(`${evaluation.score}/100`)
@@ -411,7 +407,7 @@ function renderEvalResults(evaluations: EvalResult[], ui: UIController): void {
     for (const step of evaluation.steps) {
       if (step.status !== "fail") continue
       const note = step.note ? `  ${cleanErrorNote(step.note)}` : ""
-      lines.push(`    ${chalk.red("●")} ${chalk.dim(step.description + note)}`)
+      lines.push(`    ${chalk.red("-")} ${chalk.dim(step.description + note)}`)
     }
   }
 
@@ -442,7 +438,7 @@ export async function runLocal(
 
   if (streaming && installed.length > 0) {
     const names = installed.map((a) => a.name).join(", ")
-    console.log(`${chalk.green("●")} ${installed.length} agent${installed.length === 1 ? "" : "s"} detected ${chalk.dim("(" + names + ")")}`)
+    console.log(`${chalk.green("Detected")} ${installed.length} agent${installed.length === 1 ? "" : "s"} ${chalk.dim("(" + names + ")")}`)
   }
 
   if (installed.length === 0) {
@@ -464,7 +460,7 @@ export async function runLocal(
   // 2c. Smart matrix analysis
   const matrix = await analyzePrompt(promptContent)
   if (streaming && matrix.detectedTools.length > 0) {
-    console.log(`${chalk.green("●")} ${matrix.detectedTools.length} tools detected ${chalk.dim("(" + matrix.detectedTools.join(", ") + ")")}`)
+    console.log(`${chalk.green("Detected")} ${matrix.detectedTools.length} tools ${chalk.dim("(" + matrix.detectedTools.join(", ") + ")")}`)
   }
 
   // 3. Filter agents
@@ -510,7 +506,7 @@ export async function runLocal(
     console.log("")
     const criteriaLines = displayCriteria(criteria)
     console.log("")
-    console.log(`${chalk.green("●")} ${criteria.length} criteria generated`)
+    console.log(`${chalk.green("Generated")} ${criteria.length} criteria`)
     displayedLines = 1 + criteriaLines + 1 + 1 // blank + criteria + blank + summary
 
     // Interactive approval
