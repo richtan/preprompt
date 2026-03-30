@@ -1,0 +1,34 @@
+name: "PrePrompt"
+description: "Test your AI prompt across multiple coding agents in the cloud"
+branding:
+  icon: "check-circle"
+  color: "green"
+
+inputs:
+  prompt:
+    description: "Path to prompt file (e.g., CLAUDE.md) or inline prompt text"
+    required: true
+  agents:
+    description: "Comma-separated list of agents (default: all)"
+    required: false
+  token:
+    description: "PrePrompt API token (from `preprompt login` → `preprompt token`)"
+    required: true
+  api-url:
+    description: "PrePrompt API URL (override for self-hosted)"
+    required: false
+    default: "https://api.preprompt.dev"
+
+outputs:
+  run-id:
+    description: "The ID of the cloud run"
+  run-url:
+    description: "URL to view results on preprompt.dev"
+  status:
+    description: "Overall status: pass or fail"
+  failed-count:
+    description: "Number of agents that failed"
+
+runs:
+  using: "node20"
+  main: "dist/index.js"
