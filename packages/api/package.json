@@ -16,7 +16,8 @@
     "dotenv": "^17.3.1",
     "drizzle-orm": "^0.45.2",
     "e2b": "^2.18.0",
-    "hono": "^4.7.0"
+    "hono": "^4.7.0",
+    "jose": "^6.2.2"
   },
   "devDependencies": {
     "drizzle-kit": "^0.31.10",

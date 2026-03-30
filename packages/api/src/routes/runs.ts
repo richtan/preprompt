@@ -1,6 +1,7 @@
 import { Hono } from "hono"
 import { startRun, hashPrompt } from "../orchestrator.js"
 import { eventStore } from "../events.js"
+import { extractAuth, checkRateLimit, getMaxAgents } from "../auth.js"
 import type { SandboxProvider } from "../sandbox/provider.js"
 
 export const runs = new Hono()
@@ -34,8 +35,23 @@ runs.post("/", async (c) => {
     return c.json({ error: "no valid agents specified" }, 400)
   }
 
-  // TODO: auth check (anon token or JWT)
-  // TODO: rate limit check
+  // Auth + rate limit
+  const auth = await extractAuth(c)
+  if (!auth) {
+    return c.json({ error: "authentication required", hint: "Run `preprompt login` or set PREPROMPT_TOKEN" }, 401)
+  }
+
+  // TODO: fetch actual run count from DB
+  const runCount = 0
+  const rateLimitError = checkRateLimit(auth, runCount)
+  if (rateLimitError) {
+    return c.json({ error: "login_required", message: rateLimitError }, 401)
+  }
+
+  // Cap agents to tier limit
+  const maxAgents = getMaxAgents(auth)
+  const cappedAgents = agents.slice(0, maxAgents)
+
   // TODO: create run record in DB
 
   const runId = crypto.randomUUID()
@@ -46,7 +62,7 @@ runs.post("/", async (c) => {
       {
         runId,
         prompt: body.prompt,
-        agents,
+        agents: cappedAgents,
         apiKeys: {
           anthropic: process.env.ANTHROPIC_API_KEY,
           openai: process.env.OPENAI_API_KEY,
@@ -65,7 +81,7 @@ runs.post("/", async (c) => {
   return c.json({
     id: runId,
     status: "pending",
-    agents,
+    agents: cappedAgents,
     promptHash: hashPrompt(body.prompt),
     streamUrl: `/api/runs/${runId}/stream`,
   }, 201)
