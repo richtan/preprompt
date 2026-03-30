@@ -123,7 +123,9 @@ async function runAgent(
       .map((f) => f.path)
 
     const duration = Date.now() - start
-    const passed = result.exitCode === 0
+    // Consider it a pass if either exit code is 0 OR the agent created files
+    // (some agents exit 1 even when they do useful work)
+    const passed = result.exitCode === 0 || fileSummary.length > 0
 
     onEvent({
       event: "agent.completed",
@@ -132,6 +134,7 @@ async function runAgent(
         duration,
         status: passed ? "pass" : "fail",
         fileSummary: `+${fileSummary.length}`,
+        files: fileSummary,
         error: passed ? undefined : (stderrBuf || result.stderr || result.stdout).slice(0, 500),
       },
     })
