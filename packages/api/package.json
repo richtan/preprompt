@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "tsup src/server.ts --format esm --clean",
+    "build": "tsup src/server.ts --format esm --clean --external e2b --external @e2b/code-interpreter --external @neondatabase/serverless --external drizzle-orm",
     "dev": "tsx watch src/server.ts",
     "start": "node dist/server.js",
     "test": "vitest run"
