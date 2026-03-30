@@ -13,4 +13,4 @@ RUN git config --global user.name "preprompt" && \
 
 # Working directory
 WORKDIR /workspace
-RUN git init
+RUN git init && chmod -R 777 /workspace
