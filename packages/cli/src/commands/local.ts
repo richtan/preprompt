@@ -400,6 +400,18 @@ export async function runLocal(
   promptInput: string,
   options: LocalOptions
 ): Promise<void> {
+  // Always restore cursor on exit (Ink and spinners hide it)
+  const restoreCursor = () => process.stdout.write("\x1b[?25h")
+  process.on("exit", restoreCursor)
+  process.on("SIGINT", () => {
+    restoreCursor()
+    process.exit(130)
+  })
+  process.on("SIGTERM", () => {
+    restoreCursor()
+    process.exit(143)
+  })
+
   // 1. Resolve prompt
   const { content: promptContent, file: promptFile } =
     await resolvePrompt(promptInput)
