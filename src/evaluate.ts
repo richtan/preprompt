@@ -33,6 +33,7 @@ Examples of good checks:
 - "node -e \\"require('express')\\""
 - "grep -q PORT .env"
 - "node -e \\"const p = require('./package.json'); process.exit(p.scripts?.dev ? 0 : 1)\\""
+- "test -d node_modules/@types/node" (for @types/* packages, use test -d, NOT require())
 
 Respond ONLY with this JSON (no markdown, no code fences):
 {"criteria":[{"number":1,"group":"Project setup","type":"file-exists","description":"package.json exists","check":"test -f package.json"},{"number":2,"group":"Dependencies","type":"command","description":"express is installed","check":"node -e \\"require('express')\\""}]}`
@@ -97,7 +98,7 @@ export async function evaluateInSandbox(
   criteria: Criterion[],
   sandboxDir: string,
   onProgress?: (checked: number, total: number, step: EvalStep) => void,
-  onStepStart?: (description: string) => void
+  onStepStart?: (index: number, total: number, description: string) => void
 ): Promise<EvalResult> {
   const start = Date.now()
 
@@ -127,7 +128,8 @@ export async function evaluateInSandbox(
     PATH: `${join(sandboxDir, "node_modules", ".bin")}:${process.env.PATH}`,
   }
 
-  for (const criterion of criteria) {
+  for (let i = 0; i < criteria.length; i++) {
+    const criterion = criteria[i]
     if (!criterion.check) {
       const step: EvalStep = {
         number: criterion.number,
@@ -141,7 +143,7 @@ export async function evaluateInSandbox(
     }
 
     totalCount++
-    onStepStart?.(criterion.description)
+    onStepStart?.(i + 1, criteria.length, criterion.description)
 
     try {
       const result = await execa(criterion.check, {

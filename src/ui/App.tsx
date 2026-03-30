@@ -24,6 +24,10 @@ export interface AgentState {
     fileSummary: string
     error?: string
   }
+  checking?: {
+    index: number
+    total: number
+  }
 }
 
 export interface AppState {
@@ -54,6 +58,7 @@ export default function App({ state }: AppProps) {
           history={agent.history}
           done={agent.done}
           result={agent.result}
+          checking={agent.checking}
         />
       ))}
     </Box>

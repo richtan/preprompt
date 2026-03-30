@@ -18,6 +18,10 @@ interface AgentTaskProps {
     fileSummary: string
     error?: string
   }
+  checking?: {
+    index: number
+    total: number
+  }
 }
 
 function formatDur(ms: number): string {
@@ -30,14 +34,14 @@ function historyVerb(type: ActionType): string {
     case "command": return "run"
     case "create": return "create"
     case "edit": return "edit"
-    case "check": return "check"
     default: return "run"
   }
 }
 
-export default function AgentTask({ name, history, result }: AgentTaskProps) {
-  const past = history.slice(0, -1)
-  const current = history.length > 0 ? history[history.length - 1] : null
+export default function AgentTask({ name, history, result, checking }: AgentTaskProps) {
+  // During checking phase, all history is past (no spinner on last item)
+  const past = checking ? history : history.slice(0, -1)
+  const current = checking ? null : (history.length > 0 ? history[history.length - 1] : null)
 
   return (
     <Box flexDirection="column">
@@ -45,6 +49,9 @@ export default function AgentTask({ name, history, result }: AgentTaskProps) {
         <Spinner />
         <Text> {name}</Text>
         {result && <Text dimColor>  {formatDur(result.duration)}</Text>}
+        {checking && (
+          <Text dimColor>  checking [{checking.index}/{checking.total}]</Text>
+        )}
       </Box>
       {past.map((h, i) => (
         <Text key={`h-${i}`}>    <Text color="green">●</Text> {historyVerb(h.type)} <Text dimColor>{h.text}</Text></Text>

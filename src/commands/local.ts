@@ -237,7 +237,7 @@ function startSpinner(label: string): () => void {
   let i = 0
   process.stdout.write("\x1b[?25l") // hide cursor during spinner
   const interval = setInterval(() => {
-    process.stdout.write(`\r${SPINNER_FRAMES[i++ % SPINNER_FRAMES.length]} ${chalk.dim(label)}`)
+    process.stdout.write(`\r${SPINNER_FRAMES[i++ % SPINNER_FRAMES.length]} ${label}`)
   }, 80)
   return () => {
     clearInterval(interval)
@@ -384,11 +384,10 @@ function cleanErrorNote(note: string): string {
 }
 
 function renderEvalResults(evaluations: EvalResult[], ui: UIController): void {
-  ui.addCompleted("\n" + chalk.dim("Results"))
   const maxNameLen = Math.max(...evaluations.map((e) => e.agent.length))
+  const lines: string[] = [" "] // blank line separator
 
   for (const evaluation of evaluations) {
-    const passed = evaluation.steps.filter((s) => s.status === "pass").length
     const failed = evaluation.steps.filter((s) => s.status === "fail").length
 
     const hasFails = failed > 0
@@ -407,16 +406,16 @@ function renderEvalResults(evaluations: EvalResult[], ui: UIController): void {
       ? chalk.red(`${failed} failed`)
       : chalk.green(`0 failed`)
 
-    ui.addCompleted(`${icon} ${chalk.bold(name)}  ${score}  ${statusText}`)
+    lines.push(`${chalk.bold(name)}  ${score}  ${statusText}`)
 
-    // Failures immediately under this agent's score line
     for (const step of evaluation.steps) {
       if (step.status !== "fail") continue
       const note = step.note ? `  ${cleanErrorNote(step.note)}` : ""
-      ui.addCompleted(`    ${chalk.red("●")} ${chalk.dim(step.description + note)}`)
+      lines.push(`    ${chalk.red("●")} ${chalk.dim(step.description + note)}`)
     }
   }
-  ui.addCompleted("")
+
+  ui.addCompletedBatch(lines)
 }
 
 export async function runLocal(
@@ -555,8 +554,8 @@ export async function runLocal(
       // Evaluate immediately in the agent's sandbox
       if (criteria.length > 0) {
         const onStepStart = ui
-          ? (description: string) => {
-              ui.addAgentHistory(result.agent, "check", description)
+          ? (index: number, total: number, _description: string) => {
+              ui.setAgentChecking(result.agent, index, total)
             }
           : undefined
 

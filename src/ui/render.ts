@@ -6,10 +6,12 @@ import type { ActionType } from "../agents/types.js"
 
 export interface UIController {
   addCompleted(text: string, color?: string): void
+  addCompletedBatch(texts: string[]): void
   startAgent(name: string): void
   updateAgentStatus(name: string, status: string): void
   addAgentHistory(name: string, type: ActionType, text: string): void
   setAgentResult(name: string, result: AgentState["result"]): void
+  setAgentChecking(name: string, index: number, total: number): void
   completeAgent(name: string): void
   finish(): void
 }
@@ -36,6 +38,14 @@ export function renderApp(): UIController {
       update()
     },
 
+    addCompletedBatch(texts: string[]) {
+      state.completed = [
+        ...state.completed,
+        ...texts.map(text => ({ key: String(keyCounter++), text })),
+      ]
+      update()
+    },
+
     startAgent(name: string) {
       state.agents.set(name, { name, status: "", history: [], done: false })
       update()
@@ -55,8 +65,7 @@ export function renderApp(): UIController {
       const entry: HistoryEntry = { type, text }
       const last = agent.history[agent.history.length - 1]
       if (last && last.type === type && last.text === text) return
-      // Cap agent actions at 15, eval checks uncapped
-      if (type !== "check" && agent.history.filter(h => h.type !== "check").length >= 15) return
+      if (agent.history.length >= 15) return
       agent.history = [...agent.history, entry]
       update()
     },
@@ -65,6 +74,13 @@ export function renderApp(): UIController {
       const agent = state.agents.get(name)
       if (!agent) return
       agent.result = result
+      update()
+    },
+
+    setAgentChecking(name: string, index: number, total: number) {
+      const agent = state.agents.get(name)
+      if (!agent) return
+      agent.checking = { index, total }
       update()
     },
 
@@ -89,13 +105,12 @@ export function renderApp(): UIController {
         : `${(result.duration / 1000).toFixed(1)}s`
       const errorSuffix = result.error ? chalk.dim(`  ${result.error}`) : ""
 
-      // Filter out eval check items — only show agent actions in Static
-      const agentActions = agent.history.filter(h => h.type !== "check")
-
       state.completed = [
         ...state.completed,
+        // Blank line between agent blocks
+        ...(state.completed.length > 0 ? [{ key: String(keyCounter++), text: " " }] : []),
         { key: String(keyCounter++), text: `${icon} ${name}  ${statusText}  ${chalk.dim(dur)}${errorSuffix}` },
-        ...agentActions.map((h) => {
+        ...agent.history.map((h) => {
           const verb = h.type === "command" ? "run"
             : h.type === "create" ? "create"
             : h.type === "edit" ? "edit"

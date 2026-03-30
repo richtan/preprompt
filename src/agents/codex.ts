@@ -16,9 +16,9 @@ function stripShellWrappers(cmd: string): string {
   while (prev !== cmd) {
     prev = cmd
     const m = cmd.match(
-      /^(?:\/(?:usr\/)?bin\/)?(?:z|ba)?sh\s+-\w*c\s+(?:'([\s\S]*)'|"([\s\S]*)")\s*$/
+      /^(?:\/(?:usr\/)?bin\/)?(?:z|ba)?sh\s+-\w*c\s+(?:'([\s\S]*)'|"([\s\S]*)"|(\S+))\s*$/
     )
-    if (m) cmd = (m[1] ?? m[2] ?? cmd).trim()
+    if (m) cmd = (m[1] ?? m[2] ?? m[3] ?? cmd).trim()
   }
   return cmd
 }
@@ -52,6 +52,10 @@ function extractAction(event: any): ExtractedAction | null {
       let cmd = String(item.command ?? item.args?.[0] ?? "")
       cmd = stripShellWrappers(cmd)
       const status = cmd.length > 60 ? `Running ${cmd.slice(0, 57)}...` : `Running ${cmd}`
+      // Filter read-like commands (agent inspecting files, not doing work)
+      if (/^(?:sed\s+-n|cat\s|head\s|tail\s|less\s|more\s|ls\s)/.test(cmd)) {
+        return { status, actionType: "other", actionText: cmd }
+      }
       return { status, actionType: "command", actionText: cmd }
     }
     default:
