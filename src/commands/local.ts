@@ -412,8 +412,7 @@ function renderEvalResults(evaluations: EvalResult[], ui: UIController): void {
 
     for (const step of evaluation.steps) {
       if (step.status !== "fail") continue
-      const note = step.note ? chalk.dim(`  ${cleanErrorNote(step.note)}`) : ""
-      lines.push(`    ${chalk.red("-")} ${step.description}${note}`)
+      lines.push(`    ${chalk.red("-")} ${step.description}`)
     }
   }
 
@@ -501,7 +500,7 @@ export async function runLocal(
       ? startSpinner(feedback ? "Revising criteria..." : "Generating criteria...")
       : undefined
 
-    criteria = await generateCriteria(promptContent, installed[0], feedback)
+    criteria = await generateCriteria(promptContent, installed[0], feedback, criteria.length > 0 ? criteria : undefined)
 
     stopSpinner?.()
 

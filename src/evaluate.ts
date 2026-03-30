@@ -9,7 +9,7 @@ const MAX_CRITERIA = 40
 const CHECK_TIMEOUT = 10_000
 
 // Phase 1: Generate criteria from the prompt BEFORE execution
-function buildCriteriaPrompt(promptContent: string, feedback?: string): string {
+function buildCriteriaPrompt(promptContent: string, feedback?: string, previousCriteria?: Criterion[]): string {
   let prompt = `You are analyzing an AI instruction prompt to determine specific, verifiable success criteria.
 
 PROMPT:
@@ -38,7 +38,10 @@ Examples of good checks:
 Respond ONLY with this JSON (no markdown, no code fences):
 {"criteria":[{"number":1,"group":"Project setup","type":"file-exists","description":"package.json exists","check":"test -f package.json"},{"number":2,"group":"Dependencies","type":"command","description":"express is installed","check":"node -e \\"require('express')\\""}]}`
 
-  if (feedback) {
+  if (feedback && previousCriteria?.length) {
+    const prevJson = JSON.stringify({ criteria: previousCriteria }, null, 2)
+    prompt += `\n\nPREVIOUS CRITERIA (your last generation):\n${prevJson}\n\nUSER FEEDBACK:\n${feedback}\n\nRevise the criteria above to address this feedback. Make surgical changes: keep criteria the user didn't mention, modify or remove ones they called out, add new ones they requested.`
+  } else if (feedback) {
     prompt += `\n\nUSER FEEDBACK ON PREVIOUS CRITERIA:\n${feedback}\n\nRevise the criteria to address this feedback. Keep existing good criteria and add/modify based on the feedback.`
   }
 
@@ -76,9 +79,10 @@ function parseCriteriaResponse(raw: string): Criterion[] | null {
 export async function generateCriteria(
   promptContent: string,
   analyzerAdapter: AgentAdapter,
-  feedback?: string
+  feedback?: string,
+  previousCriteria?: Criterion[]
 ): Promise<Criterion[]> {
-  const criteriaPrompt = buildCriteriaPrompt(promptContent, feedback)
+  const criteriaPrompt = buildCriteriaPrompt(promptContent, feedback, previousCriteria)
   const sandbox = await createSandbox()
 
   try {
