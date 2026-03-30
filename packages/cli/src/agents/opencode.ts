@@ -3,15 +3,13 @@ import { execa } from "execa"
 import type { AgentAdapter, ExecuteOptions } from "./types.js"
 import type { AgentInfo, ExecutionResult } from "../types.js"
 
-const STDIN_THRESHOLD = 100_000
-
 /**
  * OpenCode CLI adapter.
  *
  * Uses `--format json` to get structured JSONL events from the `opencode`
- * binary (opencode-ai).
+ * binary (opencode-ai). Prompt is always piped via stdin.
  *
- *   opencode run "prompt" --format json
+ *   echo "prompt" | opencode run --format json
  *
  * JSONL event types (verified from real output):
  *   { type: "tool_use", part: { tool: "write", state: { input: { filePath, content } } } }
@@ -57,19 +55,13 @@ export const opencode: AgentAdapter = {
     const start = Date.now()
     const streaming = !!options.onStatus
 
-    const useStdin = Buffer.byteLength(prompt, "utf8") > STDIN_THRESHOLD
-
-    const args = ["run"]
-    if (!useStdin) {
-      args.push(prompt)
-    }
-    args.push("--format", streaming ? "json" : "default")
+    const args = ["run", "--format", streaming ? "json" : "default"]
 
     try {
       const proc = execa("opencode", args, {
         cwd: workdir,
         timeout: options.timeout,
-        input: useStdin ? prompt : undefined,
+        input: prompt,
         reject: false,
       })
 

@@ -11,11 +11,16 @@ import type { AgentInfo, ExecutionResult } from "../types.js"
  *
  *   agent --print --force --trust --output-format stream-json "prompt"
  *
- * Stream-JSON event format (same as Claude Code):
- *   { type: "assistant", message: { content: [{ type: "tool_use", name, input }] } }
- *   { type: "result", result: "final text" }
+ * Stream-JSON event types (verified from real output):
+ *   { type: "tool_call", subtype: "started", tool_call: { editToolCall: { args: { path, streamContent } } } }
+ *   { type: "tool_call", subtype: "completed", tool_call: { editToolCall: { args: {...}, result: { success: {...} } } } }
+ *   { type: "tool_call", subtype: "started", tool_call: { shellToolCall: { args: { command }, description: "..." } } }
+ *   { type: "tool_call", subtype: "started", tool_call: { readToolCall: { args: { path } } } }
+ *   { type: "assistant", message: { content: [{ type: "text", text: "..." }] } }
+ *   { type: "result", result: "final text", subtype: "success" }
+ *   { type: "thinking", subtype: "delta"/"completed" }
  *
- * Tool names (PascalCase): Write, Edit, Read, Bash, Glob, Grep, Delete
+ * Tool call keys: editToolCall, shellToolCall, readToolCall, grepToolCall, globToolCall, lsToolCall, deleteToolCall
  */
 
 export const cursor: AgentAdapter = {
@@ -98,39 +103,48 @@ export const cursor: AgentAdapter = {
               continue
             }
 
-            if (event.type === "assistant") {
-              const content = event.message?.content
-              if (!Array.isArray(content)) continue
+            if (event.type === "tool_call") {
+              const tc = event.tool_call ?? {}
 
-              for (const block of content) {
-                if (block.type === "tool_use") {
-                  const name = String(block.name ?? "").toLowerCase()
-                  const input = block.input ?? {}
-
-                  if (name === "write") {
-                    const file = basename(input.file_path ?? "file")
-                    options.onAction?.("create", file)
-                    options.onStatus?.(`Writing ${file}`)
-                  } else if (name === "edit") {
-                    const file = basename(input.file_path ?? "file")
-                    options.onAction?.("edit", file)
-                    options.onStatus?.(`Editing ${file}`)
-                  } else if (name === "bash" || name === "shell") {
-                    const cmd = String(input.command ?? "")
-                    if (cmd) {
-                      options.onAction?.("command", cmd)
-                      options.onStatus?.(cmd.length > 60 ? `Running ${cmd.slice(0, 57)}...` : `Running ${cmd}`)
-                    }
-                  } else if (name === "read" || name === "glob" || name === "grep") {
-                    options.onStatus?.(`${block.name}...`)
+              if (event.subtype === "started") {
+                if (tc.editToolCall) {
+                  const file = basename(tc.editToolCall.args?.path ?? "file")
+                  options.onStatus?.(`Writing ${file}`)
+                } else if (tc.shellToolCall) {
+                  const cmd = String(tc.shellToolCall.args?.command ?? "")
+                  if (cmd) {
+                    options.onAction?.("command", cmd)
+                    const desc = tc.shellToolCall.description ?? tc.shellToolCall.args?.description ?? cmd
+                    options.onStatus?.(String(desc).length > 60 ? `Running ${String(desc).slice(0, 57)}...` : `Running ${desc}`)
                   }
-                } else if (block.type === "text" && block.text) {
-                  finalText += block.text
+                } else if (tc.readToolCall) {
+                  options.onStatus?.(`Reading ${basename(tc.readToolCall.args?.path ?? "file")}`)
+                } else if (tc.grepToolCall) {
+                  options.onStatus?.("Searching code...")
+                } else if (tc.globToolCall || tc.lsToolCall) {
+                  options.onStatus?.("Searching files...")
+                }
+              } else if (event.subtype === "completed") {
+                // Determine create vs edit from completed result
+                if (tc.editToolCall) {
+                  const file = basename(tc.editToolCall.args?.path ?? "file")
+                  const isEdit = !!tc.editToolCall.result?.success?.beforeFullFileContent
+                  options.onAction?.(isEdit ? "edit" : "create", file)
                 }
               }
-            } else if (event.type === "result" && event.result) {
-              finalText = event.result
+            } else if (event.type === "assistant") {
+              const content = event.message?.content
+              if (Array.isArray(content)) {
+                for (const block of content) {
+                  if (block.type === "text" && block.text) {
+                    finalText += block.text
+                  }
+                }
+              }
+            } else if (event.type === "result") {
+              if (event.result) finalText = event.result
             }
+            // thinking, system, user: ignore
           }
         })
       }
