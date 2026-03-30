@@ -1,0 +1,29 @@
+@import "tailwindcss";
+
+:root {
+  --bg: #0a0a0a;
+  --text: #e5e5e5;
+  --dim: #666666;
+  --faint: #444444;
+  --separator: #1a1a1a;
+  --pass: #22c55e;
+  --fail: #ef4444;
+  --create: #22c55e;
+  --edit: #eab308;
+  --command: #666666;
+}
+
+@theme inline {
+  --font-mono: var(--font-geist-mono);
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-geist-mono), ui-monospace, monospace;
+}
+
+::selection {
+  background: #333;
+  color: #fff;
+}
