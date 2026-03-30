@@ -3,6 +3,7 @@
 import chalk from "chalk"
 import { Command } from "commander"
 import { runLocal } from "./commands/local.js"
+import { runCloud } from "./commands/cloud.js"
 import { detectAgents } from "./agents/detector.js"
 import { renderAgentList, renderDiff, renderError } from "./output/terminal.js"
 import { loadLatestResult, listRuns, loadResult } from "./storage.js"
@@ -44,6 +45,36 @@ program
       })
     }
   )
+
+program
+  .command("cloud <prompt>")
+  .description("Run a prompt on PrePrompt Cloud (all agents, managed sandboxes)")
+  .option("--json", "Output results as JSON", false)
+  .option("--quiet", "Suppress output, only set exit code (for CI)", false)
+  .option(
+    "--agents <names>",
+    "Comma-separated list of agents to use (e.g. claude-code,codex)"
+  )
+  .action(
+    async (
+      prompt: string,
+      opts: { json: boolean; quiet: boolean; agents?: string }
+    ) => {
+      await runCloud(prompt, {
+        json: opts.json,
+        quiet: opts.quiet,
+        agents: opts.agents,
+      })
+    }
+  )
+
+program
+  .command("login")
+  .description("Authenticate with PrePrompt Cloud")
+  .action(async () => {
+    // TODO: implement GitHub OAuth flow
+    console.log(chalk.yellow("Login is not yet available. Coming soon."))
+  })
 
 program
   .command("list")
