@@ -31,6 +31,7 @@ function historyVerb(type: ActionType): string {
     case "command": return "run"
     case "create": return "create"
     case "edit": return "edit"
+    case "check": return "check"
     default: return "run"
   }
 }
@@ -39,13 +40,12 @@ export default function AgentTask({ name, status, history, done, result }: Agent
   const [elapsed, setElapsed] = useState(0)
 
   useEffect(() => {
-    if (done) return
     const start = Date.now()
     const timer = setInterval(() => {
       setElapsed(Date.now() - start)
     }, 100)
     return () => clearInterval(timer)
-  }, [done])
+  }, [])
 
   const past = history.slice(0, -1)
   const current = history.length > 0 ? history[history.length - 1] : null

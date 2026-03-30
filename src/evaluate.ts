@@ -96,7 +96,8 @@ export async function evaluateInSandbox(
   agent: string,
   criteria: Criterion[],
   sandboxDir: string,
-  onProgress?: (checked: number, total: number, step: EvalStep) => void
+  onProgress?: (checked: number, total: number, step: EvalStep) => void,
+  onStepStart?: (description: string) => void
 ): Promise<EvalResult> {
   const start = Date.now()
 
@@ -140,6 +141,7 @@ export async function evaluateInSandbox(
     }
 
     totalCount++
+    onStepStart?.(criterion.description)
 
     try {
       const result = await execa(criterion.check, {

@@ -1,7 +1,5 @@
-import { useState, useCallback } from "react"
 import { Box, Text, Static } from "ink"
 import AgentTask from "./AgentTask.js"
-import Spinner from "./Spinner.js"
 import type { ActionType } from "../agents/types.js"
 
 export interface CompletedItem {
@@ -28,18 +26,9 @@ export interface AgentState {
   }
 }
 
-export interface EvalState {
-  agent: string
-  checked: number
-  total: number
-  description: string
-  done: boolean
-}
-
 export interface AppState {
   completed: CompletedItem[]
   agents: Map<string, AgentState>
-  eval: EvalState | null
 }
 
 interface AppProps {
@@ -63,22 +52,10 @@ export default function App({ state }: AppProps) {
           name={agent.name}
           status={agent.status}
           history={agent.history}
-          done={false}
+          done={agent.done}
+          result={agent.result}
         />
       ))}
-
-      {state.eval && !state.eval.done && (
-        <Box>
-          <Spinner />
-          <Text> Evaluating {state.eval.agent}</Text>
-          {state.eval.total > 0 && (
-            <Text dimColor> [{state.eval.checked}/{state.eval.total}]</Text>
-          )}
-          {state.eval.description && (
-            <Text dimColor>  {state.eval.description}</Text>
-          )}
-        </Box>
-      )}
     </Box>
   )
 }

@@ -336,16 +336,13 @@ async function runSingleAgent(
       status = "pass"
     }
 
-    if (ui) {
-      const fileSummary = formatFileTree(diff.added)
-      ui.completeAgent(agentName, {
-        status,
-        duration: execution.duration,
-        fileSummary,
-        error: status === "fail" ? `exit code ${execution.exitCode}`
-          : status === "timeout" ? `timed out after ${formatDur(timeout)}`
-          : undefined,
-      })
+    const agentResult = {
+      status: status as "pass" | "fail" | "timeout" | "error" | "no-changes",
+      duration: execution.duration,
+      fileSummary: formatFileTree(diff.added),
+      error: status === "fail" ? `exit code ${execution.exitCode}`
+        : status === "timeout" ? `timed out after ${formatDur(timeout)}`
+        : undefined,
     }
 
     const result: RunResult = {
@@ -360,7 +357,7 @@ async function runSingleAgent(
       timestamp: Date.now(),
     }
 
-    return { result, sandbox }
+    return { result, sandbox, agentResult }
   } catch (error) {
     await sandbox.destroy()
     throw error
@@ -405,7 +402,7 @@ function renderEvalResults(evaluations: EvalResult[], ui: UIController): void {
     const score = scoreColor(`${evaluation.score}/100`)
     const statusText = hasFails
       ? chalk.red(`${failed} failed`)
-      : chalk.green(`${passed} passed`)
+      : chalk.green(`0 failed`)
 
     ui.addCompleted(`${icon} ${chalk.bold(name)}  ${score}  ${statusText}`)
 
@@ -544,33 +541,30 @@ export async function runLocal(
 
   async function runAndEvaluate(adapter: AgentAdapter): Promise<void> {
     try {
-      const { result, sandbox } = await runSingleAgent(
+      const { result, sandbox, agentResult } = await runSingleAgent(
         adapter, promptContent, promptFile, options.timeout, ui
       )
       runResults.push(result)
 
       // Evaluate immediately in the agent's sandbox
       if (criteria.length > 0) {
-        const onProgress = ui
-          ? (checked: number, total: number, step: EvalStep) => {
-              ui.updateEvalProgress(result.agent, checked, total, step.description)
+        const onStepStart = ui
+          ? (description: string) => {
+              ui.addAgentHistory(result.agent, "check", description)
             }
           : undefined
 
-        if (ui) ui.startEval(result.agent)
-
         try {
           const evalResult = await evaluateInSandbox(
-            result.agent, criteria, sandbox.dir, onProgress
+            result.agent, criteria, sandbox.dir, undefined, onStepStart
           )
           evaluations.push(evalResult)
         } catch {
           // Evaluation failed
         }
-
-        if (ui) ui.completeEval()
       }
 
+      if (ui) ui.completeAgent(result.agent, agentResult)
       await sandbox.destroy()
     } catch (error) {
       // Agent failed to run

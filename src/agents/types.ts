@@ -1,6 +1,6 @@
 import type { AgentInfo, ExecutionResult } from "../types.js"
 
-export type ActionType = "command" | "create" | "edit" | "other"
+export type ActionType = "command" | "create" | "edit" | "check" | "other"
 
 export interface ExecuteOptions {
   timeout: number
