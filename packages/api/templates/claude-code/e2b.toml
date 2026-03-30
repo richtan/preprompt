@@ -1,0 +1,16 @@
+# This is a config for E2B sandbox template.
+# You can use template ID (ktmmu7ozwslnodshqphh) or template name (preprompt-claude-code) to create a sandbox:
+
+# Python SDK
+# from e2b import Sandbox, AsyncSandbox
+# sandbox = Sandbox.create("preprompt-claude-code") # Sync sandbox
+# sandbox = await AsyncSandbox.create("preprompt-claude-code") # Async sandbox
+
+# JS SDK
+# import { Sandbox } from 'e2b'
+# const sandbox = await Sandbox.create('preprompt-claude-code')
+
+team_id = "153d8294-0d9c-42af-94f5-83ac1125b7e6"
+dockerfile = "e2b.Dockerfile"
+template_name = "preprompt-claude-code"
+template_id = "ktmmu7ozwslnodshqphh"

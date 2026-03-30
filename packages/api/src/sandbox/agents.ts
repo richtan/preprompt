@@ -1,18 +1,15 @@
 // Agent configuration — no E2B dependency, safe to import anywhere
 
-// Agent name → E2B template ID
+// Agent name → E2B template ID (pre-built with agent installed)
 export const AGENT_TEMPLATES: Record<string, string> = {
-  "claude-code": "base", // TODO: replace with preprompt-claude template
-  "codex": "base",       // TODO: replace with preprompt-codex template
-  "aider": "base",       // TODO: replace with preprompt-aider template
-  "copilot": "base",     // TODO: replace with preprompt-copilot template
+  "claude-code": "preprompt-claude-code",
+  "codex": "preprompt-codex",
+  "aider": "preprompt-aider",
+  "copilot": "base", // No pre-built template yet
 }
 
-// Agent name → install commands to run after sandbox boots
+// Agent name → install commands (only needed for agents without pre-built templates)
 export const AGENT_SETUP: Record<string, string[]> = {
-  "claude-code": ["npm install -g @anthropic-ai/claude-code"],
-  "codex": ["npm install -g @openai/codex"],
-  "aider": ["pip install aider-chat"],
   "copilot": ["npm install -g @githubnext/github-copilot-cli"],
 }
 
