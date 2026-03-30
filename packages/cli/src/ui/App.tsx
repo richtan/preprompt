@@ -50,6 +50,8 @@ export default function App({ state }: AppProps) {
         )}
       </Static>
 
+      {state.completed.length > 0 && activeAgents.length > 0 && <Text> </Text>}
+
       {activeAgents.map((agent) => (
         <AgentTask
           key={agent.name}

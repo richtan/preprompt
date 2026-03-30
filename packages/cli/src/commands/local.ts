@@ -573,13 +573,29 @@ export async function runLocal(
 
   await Promise.allSettled(installed.map((adapter) => runAndEvaluate(adapter)))
 
-  // Summary line after all agents done
+  // Summary + deferred failures after all agents done
   if (ui && evaluations.length > 0) {
-    const totalChecks = evaluations.reduce((sum, e) => sum + e.steps.length, 0)
-    ui.addCompletedBatch([
+    const lines: string[] = [
       " ",
-      `${chalk.green("Evaluated")} ${totalChecks} checks across ${evaluations.length} agents`,
-    ])
+      `${chalk.green("Evaluated")} ${evaluations.length} agent${evaluations.length === 1 ? "" : "s"}`,
+    ]
+
+    // Deferred failures section (only if any agent has failures)
+    const failing = evaluations.filter((e) => e.steps.some((s) => s.status === "fail"))
+    if (failing.length > 0) {
+      lines.push("")
+      for (let i = 0; i < failing.length; i++) {
+        if (i > 0) lines.push("")
+        const count = failing[i].steps.filter(s => s.status === "fail").length
+        lines.push(`${chalk.bold(failing[i].agent)}  ${chalk.red(`${count} failed`)}`)
+        for (const step of failing[i].steps) {
+          if (step.status !== "fail") continue
+          lines.push(`    ${chalk.red("-")} ${step.description}`)
+        }
+      }
+    }
+
+    ui.addCompletedBatch(lines)
   }
 
   // 7. Build multi-run result

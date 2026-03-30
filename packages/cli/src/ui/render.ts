@@ -108,8 +108,8 @@ export function renderApp(): UIController {
       if (evaluation) {
         const failed = evaluation.steps.filter((s) => s.status === "fail").length
         statusSuffix = failed > 0
-          ? `  ${chalk.red(`${failed} failed`)}`
-          : `  ${chalk.green("0 failed")}`
+          ? `  ${chalk.red("failed")}`
+          : `  ${chalk.green("passed")}`
       } else if (result.status === "timeout") {
         statusSuffix = chalk.yellow("  timed out")
       } else if (result.status === "no-changes") {
@@ -118,18 +118,6 @@ export function renderApp(): UIController {
         statusSuffix = chalk.red("  failed") + (result.error ? chalk.dim(`  ${result.error}`) : "")
       } else {
         statusSuffix = ""
-      }
-
-      // Build failure detail lines
-      const failureLines: CompletedItem[] = []
-      if (evaluation) {
-        for (const step of evaluation.steps) {
-          if (step.status !== "fail") continue
-          failureLines.push({
-            key: String(keyCounter++),
-            text: `    ${chalk.red("-")} ${step.description}`,
-          })
-        }
       }
 
       state.completed = [
@@ -142,7 +130,6 @@ export function renderApp(): UIController {
             : chalk.dim(">")
           return { key: String(keyCounter++), text: `    ${prefix} ${h.text}` }
         }),
-        ...failureLines,
       ]
 
       state.agents.delete(name)
