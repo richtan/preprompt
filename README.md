@@ -44,35 +44,42 @@ preprompt CLAUDE.md --json
 
 ## Output
 
-Single agent:
 ```
-  ✓ claude-code — pass in 34.2s
+Detected 2 agents (claude-code, codex)
+Detected 5 tools (env, git, node, npm, typescript)
 
-  5 files created:
-    + package.json
+  Project setup (1)
+    - package.json exists
+
+  Dependencies (6)
+    - express is installed
+    - dotenv is installed
+    - typescript is installed as dev dependency
+
+Generated 24 criteria
+
+claude-code  52.4s
+    + .env
     + .gitignore
-    + .env.example
-    + src/app.tsx
-    + src/index.ts
+    + health.ts
+    + index.ts
+    ~ tsconfig.json
+    ~ package.json
+    > npm init -y
+    > npm install express dotenv
+    > npm run build
 
-  5 changes · exit code 0 · 34.2s
-```
+codex  118.6s
+    + .env
+    ~ tsconfig.json
+    > npm init -y
+    > npm install express dotenv
+    > npx tsc --init
+    > npm run build
 
-Multiple agents (parallel, with live streaming):
-```
-  PrePrompt — running on 3 agents
-
-  claude-code  │ > npm install
-  codex        │ > yarn add react next
-  aider        │ > npm install
-
-  claude-code  │ + Created src/app/page.tsx
-  codex        │ + Created src/app/page.tsx
-  aider        │ + Created pages/index.tsx      ← divergence!
-
-  claude-code  │ ✓ Done (34s, 7 files)
-  codex        │ ✗ Done (41s, 6 files)
-  aider        │ ✓ Done (28s, 7 files)
+claude-code  0 failed
+codex        1 failed
+    - Server starts and GET /health returns { status: 'ok' }
 ```
 
 ## Commands
@@ -103,12 +110,12 @@ Multiple agents (parallel, with live streaming):
 ## How it works
 
 1. Detects which AI agents are installed on your machine
-2. Analyzes your prompt to identify tools and potential failure modes
-3. Creates a clean temp directory per agent (sandbox)
-4. Runs all agents in parallel with your prompt
-5. Captures filesystem snapshots before and after
-6. Streams results in real time with divergence highlighting
-7. Shows exactly what each agent did differently
+2. Analyzes your prompt to generate verifiable success criteria
+3. Lets you review and approve criteria before running
+4. Creates a clean temp directory per agent (sandbox)
+5. Runs all agents in parallel with your prompt
+6. Evaluates each agent's sandbox against the criteria immediately after completion
+7. Shows what each agent did and what failed
 
 ## License
 

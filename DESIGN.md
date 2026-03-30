@@ -1,6 +1,6 @@
 # Design System
 
-PrePrompt's CLI output follows the style of [uv by Astral](https://github.com/astral-sh/uv). Clean, terse, no decoration.
+PrePrompt's CLI output follows the style of [uv by Astral](https://github.com/astral-sh/uv). Clean, terse, no decoration. The verb does the work, not the icon.
 
 ## Reference
 
@@ -10,92 +10,111 @@ uv is the gold standard. When in doubt about how output should look, check what 
 
 **Column 0.** Status lines start at column 0. Never indent status output.
 
-**Action keywords.** Green colored verb at the start of status lines: `Analyzed`, `Running`, `Passed`, `Failed`, `Comparing`, `Checking`, `Saved`, `Diagnosing`, `Generating`, `Applied`.
+**Verb headers.** Green colored verb at the start of phase lines: `Detected`, `Generated`. These replace icons as section markers.
 
-**No decoration.** No borders. No boxes. No ASCII art. Plain text with padded columns when alignment is needed. Comparison tables are fine for evaluation results where the data is genuinely tabular.
+**No decoration.** No borders. No boxes. No ASCII art. No dots. No icons. Plain text with padded columns when alignment is needed.
 
-**Icons.** Colored circles `●` for pass/fail/status. Green = pass, red = fail, yellow = timeout/warning. No checkmarks, no crosses, no emojis.
+**Typed prefixes.** Agent history uses meaningful prefixes: `+` (green) for create, `~` (yellow) for edit, `>` (dim) for run. These carry information — you scan and see 4 files created, 2 edited, 3 commands run.
 
-**Timing in parentheses,** dimmed: `(34.2s)`, `(3 files created)`.
+**Timing.** Dim, after agent name: `claude-code  52.4s`. No parentheses.
 
-**2-space indent** only for list items (history, check results). Never for status lines.
-
-**Summaries are plain.** `1 passed, 1 failed` at column 0. No color on the summary line.
+**4-space indent** for list items (history, criteria, failures). Never indent status lines.
 
 **Errors.** `error: message` in red at column 0. Multi-line errors: first line gets prefix, rest at 2-space indent.
 
 **Warnings.** `warning: message` in yellow at column 0.
 
-**Streaming.** Single-agent: no agent prefix, items at 2-space indent. Multi-agent: agent name prefix, padded to alignment.
+**No headers.** Don't print `PrePrompt ---` or decorated banners. Start with the action. No "Results" header — the score lines ARE the results.
 
-**No headers.** Don't print `PrePrompt ---` or decorated banners. Start with the action.
+**Silence is fine.** If there's nothing to say, say nothing. No filler.
 
-**Silence is fine.** If there's nothing to say, say nothing. No progress bars, no spinners, no filler.
+**Command history.** Each agent shows a growing list of actions with typed prefixes. History persists in completed output. Consecutive duplicates are deduplicated. Capped at 15 visible entries. Read-like commands (sed, cat, ls) are filtered for codex.
 
-**Command history.** Each agent shows a growing list of actions (`> Writing file`, `> Running npm install`). History persists in completed output. Consecutive duplicates are deduplicated. Capped at 15 visible entries.
+**Criteria display.** Grouped under bold headers with counts. Dim dashes for list items, normal brightness descriptions. Summary line: `Generated 24 criteria`.
 
-**Tree file summary.** Agent completion line shows a compact tree: `package.json, src/{index.ts, routes/health.ts}, .env`. Max 80 chars, truncate with `+N more`. No separate file list.
+**Eval progress.** During evaluation, checking progress shows on the agent header line: `⠋ claude-code  52.4s  checking [3/25]`. No separate spinner, no history entries for checks.
 
-**Criteria reveal.** Criteria appear one by one during generation, then collapse into a single summary line: `● 27 criteria: Project setup (2), Dependencies (6), ...`
+**Score section.** Just `N failed`. Green `0 failed` for clean, red `N failed` for failures. No percentages, no scores. Failure details listed with red `-` prefix underneath.
 
-**Comparison table.** Evaluation results as a table: criteria groups as rows, agents as columns. Single agent uses the same table format (one column). Groups expand when agents differ or when a single agent has failures. Failure notes shown dimmed after the last column. Binary pass/fail, no partial states.
+**Agent completion.** Static output shows bold name + dim duration. No "done", no dot prefix. Just `claude-code  52.4s`.
 
-**Eval progress.** During evaluation: `⠹ Evaluating claude-code [14/27]  express is installed`
+**Blank lines.** Between agent blocks in static output. Between phases (criteria → agents → scores). No horizontal rules.
 
-## Colors
+## Dim text hierarchy
 
-- Green: success, pass icons
-- Red: errors, fail icons
-- Yellow: warnings, timeouts
-- Dim: metadata, timing, history, file trees, failure notes
-- Default: content
-- Bold: table headers (agent names)
+- **Dim:** timing, prefixes (> for run, - for criteria dashes), error notes, supplementary info in parentheses
+- **Normal:** content (file names, commands, criteria descriptions, failure descriptions)
+- **Bold:** agent names, criteria group headers
+- **Green:** verbs (Detected, Generated), + prefix (create), 0 failed
+- **Yellow:** ~ prefix (edit)
+- **Red:** - prefix (failure), N failed, error messages
 
 ## Examples
 
 Single agent:
 ```
-● 2 agents detected (claude-code, codex)
-● 5 tools detected (npm, git, typescript)
-● 27 criteria: Project setup (2), Dependencies (6), Source files (7), Configuration (6), Scripts (3), Runtime (1)
-● claude-code  passed  34.2s  package.json, src/{index.ts, routes/health.ts}, tsconfig.json, .env
-    > Running npm init -y
-    > Running npm install express dotenv
-    > Writing src/index.ts
-    > Writing src/routes/health.ts
+Detected 1 agent (claude-code)
+Detected 5 tools (npm, git, typescript, env, node)
 
-                          claude-code
-Project setup                  2/2
-Dependencies                   6/6
-Configuration                  3/6
-  .env contains PORT=3000       ●  file not found
-  .gitignore contains dist      ●  no match
-  .gitignore contains .env      ●  no match
-Scripts                        3/3
-Runtime                        1/1
-                          ─────────
-Score                        82/100
+  Project setup (1)
+    - package.json exists
+
+  Dependencies (6)
+    - express is installed
+    - dotenv is installed
+    - typescript is installed as dev dependency
+
+  Configuration (7)
+    - tsconfig.json exists
+    - .env file exists
+    - .env contains PORT=3000
+
+Generated 24 criteria
+
+claude-code  34.2s
+    + .env
+    + .gitignore
+    + health.ts
+    + index.ts
+    ~ tsconfig.json
+    ~ package.json
+    > npm init -y
+    > npm install express dotenv
+    > npm run build
+
+claude-code  0 failed
 ```
 
 Multi-agent:
 ```
-● claude-code  passed  34.2s  package.json, src/{index.ts, routes/health.ts}
-    > Running npm init -y
-    > Running npm install
-    > Writing src/index.ts
-● codex  passed  120.0s  package.json, src/{index.ts}
-    > Running npm init -y
-    > Running mkdir -p src/routes
+Detected 2 agents (claude-code, codex)
+Detected 5 tools (npm, git, typescript, env, node)
 
-                          claude-code    codex
-Project setup                  2/2        1/2
-  tsconfig.json exists          ●          ●
-Dependencies                   6/6        0/6
-Source files                   5/5        2/5
-  src/index.ts uses TypeScript  ●          ●
-  Health route returns ok       ●          ●
-                          ──────────  ──────────
-Score                        82/100     24/100
+Generated 24 criteria
+
+claude-code  52.4s
+    + .env
+    + .gitignore
+    + health.ts
+    + index.ts
+    ~ tsconfig.json
+    ~ package.json
+    > npm init -y
+    > npm install express dotenv
+    > npm run build
+
+codex  118.6s
+    + .env
+    ~ tsconfig.json
+    > npm init -y
+    > npm install express dotenv
+    > npx tsc --init
+    > npm run build
+
+claude-code  1 failed
+    - Server starts and GET /health returns { status: 'ok' }
+codex        1 failed
+    - Server starts and GET /health returns { status: 'ok' }
 ```
 
 Error:
