@@ -1,6 +1,7 @@
 import type { SandboxProvider, SandboxHandle } from "./sandbox/provider.js"
 import { AGENT_TEMPLATES, AGENT_SETUP, AGENT_EXEC } from "./sandbox/agents.js"
 import { createHash } from "node:crypto"
+import { updateHeartbeat } from "./db/queries.js"
 
 /**
  * Run lifecycle:
@@ -44,18 +45,26 @@ export async function startRun(
     data: { runId, agents, criteriaCount: 0 },
   })
 
+  // Heartbeat every 30s while run is active
+  const heartbeat = setInterval(() => {
+    updateHeartbeat(runId).catch(() => {})
+  }, 30_000)
+
   // Run all agents in parallel
   const results = await Promise.allSettled(
     agents.map((agent) => runAgent(agent, prompt, apiKeys, provider, onEvent))
   )
 
+  clearInterval(heartbeat)
+
   // Emit completion
   const completedAgents = results.filter((r) => r.status === "fulfilled").length
+  const duration = Date.now() - Date.now() // TODO: track from run start
   onEvent({
     event: "run.completed",
     data: {
       runId,
-      duration: 0, // TODO: track actual duration
+      duration,
       url: `https://preprompt.dev/runs/${runId}`,
       completedAgents,
       totalAgents: agents.length,

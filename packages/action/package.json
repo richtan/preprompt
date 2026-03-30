@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "tsup src/index.ts --format esm --clean --noExternal @actions/core --noExternal @actions/github"
+    "build": "tsup src/index.ts --format cjs --clean"
   },
   "dependencies": {
     "@actions/core": "^1.11.0",

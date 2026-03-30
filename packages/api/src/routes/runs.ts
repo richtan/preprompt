@@ -1,7 +1,8 @@
 import { Hono } from "hono"
 import { startRun, hashPrompt } from "../orchestrator.js"
 import { eventStore } from "../events.js"
-import { extractAuth, checkRateLimit, getMaxAgents } from "../auth.js"
+import { extractAuth, checkRateLimit, getMaxAgents, hashIp } from "../auth.js"
+import { createRunRecord, completeRun, saveAgentResult, getRunWithResults, getRunCount, incrementAnonRunCount } from "../db/queries.js"
 import type { SandboxProvider } from "../sandbox/provider.js"
 
 export const runs = new Hono()
@@ -41,8 +42,10 @@ runs.post("/", async (c) => {
     return c.json({ error: "authentication required", hint: "Run `preprompt login` or set PREPROMPT_TOKEN" }, 401)
   }
 
-  // TODO: fetch actual run count from DB
-  const runCount = 0
+  const runCount = await getRunCount(
+    auth.type === "user" ? auth.userId : undefined,
+    auth.type === "anon" ? auth.token : undefined
+  )
   const rateLimitError = checkRateLimit(auth, runCount)
   if (rateLimitError) {
     return c.json({ error: "login_required", message: rateLimitError }, 401)
@@ -52,11 +55,26 @@ runs.post("/", async (c) => {
   const maxAgents = getMaxAgents(auth)
   const cappedAgents = agents.slice(0, maxAgents)
 
-  // TODO: create run record in DB
-
   const runId = crypto.randomUUID()
+  const promptHash = hashPrompt(body.prompt)
 
-  // Start orchestrator in background (don't await — SSE streams the results)
+  // Persist run to DB
+  await createRunRecord({
+    id: runId,
+    prompt: body.prompt,
+    promptHash,
+    agents: cappedAgents,
+    userId: auth.type === "user" ? auth.userId : undefined,
+    anonToken: auth.type === "anon" ? auth.token : undefined,
+  })
+
+  // Track anon usage
+  if (auth.type === "anon") {
+    const ip = c.req.header("x-forwarded-for") ?? c.req.header("x-real-ip") ?? "unknown"
+    await incrementAnonRunCount(auth.token, hashIp(ip))
+  }
+
+  // Start orchestrator in background
   getSandboxProvider().then((provider) =>
     startRun(
       {
@@ -67,7 +85,25 @@ runs.post("/", async (c) => {
           anthropic: process.env.ANTHROPIC_API_KEY,
           openai: process.env.OPENAI_API_KEY,
         },
-        onEvent: (event) => eventStore.push(runId, event),
+        onEvent: (event) => {
+          eventStore.push(runId, event)
+
+          // Persist agent results to DB
+          if (event.event === "agent.completed" || event.event === "agent.error") {
+            saveAgentResult({
+              runId,
+              agent: String(event.data.agent),
+              status: event.event === "agent.error" ? "error" : String(event.data.status),
+              durationMs: Number(event.data.duration ?? 0),
+              trace: event.data.files as any,
+              error: event.data.error as string | undefined,
+            }).catch(() => {})
+          }
+
+          if (event.event === "run.completed") {
+            completeRun(runId).catch(() => {})
+          }
+        },
       },
       provider
     )
@@ -82,16 +118,16 @@ runs.post("/", async (c) => {
     id: runId,
     status: "pending",
     agents: cappedAgents,
-    promptHash: hashPrompt(body.prompt),
+    promptHash,
     streamUrl: `/api/runs/${runId}/stream`,
   }, 201)
 })
 
-// Get run results (fallback for when SSE buffer is gone)
+// Get run results
 runs.get("/:id", async (c) => {
   const id = c.req.param("id")
 
-  // Check event buffer first
+  // Check in-memory event buffer first (live/recent runs)
   const events = eventStore.getAll(id)
   if (events.length > 0) {
     return c.json({
@@ -101,6 +137,16 @@ runs.get("/:id", async (c) => {
     })
   }
 
-  // TODO: fetch from DB when event buffer is expired
+  // Fallback to DB (older runs after buffer expires)
+  const data = await getRunWithResults(id)
+  if (data) {
+    return c.json({
+      id,
+      run: data.run,
+      results: data.results,
+      status: data.run.status,
+    })
+  }
+
   return c.json({ error: "run not found", id }, 404)
 })
