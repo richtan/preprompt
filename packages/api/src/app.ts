@@ -16,4 +16,25 @@ app.route("/api/runs", runs)
 app.route("/api/auth", auth)
 app.route("/api/runs", stream)
 
+// Debug: test sandbox execution directly (remove before production)
+app.post("/debug/sandbox", async (c) => {
+  const { template, command } = await c.req.json<{ template: string; command: string }>()
+  try {
+    const { E2BSandboxProvider } = await import("./sandbox/e2b.js")
+    const provider = new E2BSandboxProvider()
+    const sandbox = await provider.create({
+      template: template ?? "preprompt-claude-code",
+      env: {
+        ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY ?? "",
+        OPENAI_API_KEY: process.env.OPENAI_API_KEY ?? "",
+      },
+    })
+    const result = await sandbox.exec(command ?? "which claude && claude --version", { timeout: 30_000 })
+    await sandbox.destroy()
+    return c.json({ exitCode: result.exitCode, stdout: result.stdout, stderr: result.stderr })
+  } catch (err: unknown) {
+    return c.json({ error: String(err), message: (err as Error).message }, 500)
+  }
+})
+
 export default app
