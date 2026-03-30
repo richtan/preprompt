@@ -1,0 +1,57 @@
+{
+  "name": "preprompt",
+  "version": "0.2.14",
+  "description": "Test any prompt on every AI tool. Run your CLAUDE.md, AGENTS.md, or any AI instruction through Claude Code, Codex, Aider, and more in parallel sandboxes. See exactly where agents diverge.",
+  "type": "module",
+  "bin": {
+    "preprompt": "./dist/index.js"
+  },
+  "files": [
+    "dist",
+    "tools"
+  ],
+  "scripts": {
+    "build": "tsup src/index.ts --format esm --clean",
+    "dev": "tsup src/index.ts --format esm --watch",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "keywords": [
+    "ai",
+    "prompt",
+    "testing",
+    "cli",
+    "claude",
+    "codex",
+    "aider",
+    "agent",
+    "eval",
+    "diff",
+    "sandbox",
+    "preprompt"
+  ],
+  "author": "richtan",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+ssh://git@github.com/richtan/preprompt.git"
+  },
+  "homepage": "https://preprompt.dev",
+  "dependencies": {
+    "chalk": "^5.4.1",
+    "commander": "^13.1.0",
+    "execa": "^9.5.2",
+    "ink": "^6.8.0",
+    "react": "^19.2.4",
+    "yaml": "^2.8.3"
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.14",
+    "tsup": "^8.4.0",
+    "typescript": "^5.7.3",
+    "vitest": "^3.0.9"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

@@ -1,63 +1,75 @@
 # PrePrompt
 
-CLI tool for testing AI prompts across coding agents. TypeScript, Commander.js, vitest.
+CLI tool for testing AI prompts across coding agents. Turborepo monorepo, TypeScript, Commander.js, vitest.
 
 ## Project structure
 
 ```
-src/
-  index.ts                CLI entrypoint (Commander.js, 11 commands)
-  types.ts                Shared types (RunResult, Snapshot, EvalResult, etc.)
-  scanner.ts              Prompt safety scanner (destructive pattern detection)
-  storage.ts              Result persistence (.preprompt/runs/)
-  matrix.ts               Smart matrix: regex-based tool detection from tools/db.json
-  trace.ts                Execution trace builder and renderer
-  evaluate.ts             Deterministic evaluation (runs check commands in sandbox)
-  errors.ts               Error hint system (pattern matching agent failures)
-  completions.ts          Zsh completion generator
-  commands/
-    local.ts              Core: run prompt, evaluate behavior, render via Ink
-    doctor.ts             Diagnose failures using AI agent analysis
-    fix.ts                Auto-suggest prompt rewrites for failures
-    compare.ts            Before/after comparison of two runs
-    badge.ts              SVG badge generator from run results
-    explain.ts            Agent behavior profiles (strengths, weaknesses, quirks)
-  agents/
-    types.ts              AgentAdapter interface
-    detector.ts           Auto-detect installed agents
-    claude-code.ts        Claude Code adapter
-    codex.ts              Codex adapter
-    aider.ts              Aider adapter
-    copilot.ts            GitHub Copilot CLI adapter
-  sandbox/
-    manager.ts            Temp directory lifecycle (create/destroy)
-    snapshot.ts           Filesystem before/after snapshots + diff
-  ui/
-    App.tsx               Main Ink React component (Static + dynamic sections)
-    AgentTask.tsx          Agent task display (spinner, status, history)
-    Spinner.tsx            Braille spinner component
-    render.ts             Ink render entry point + UIController API
-  output/
-    terminal.ts           chalk-based rendering for non-Ink commands (diff, trace, etc.)
-tools/
-  db.json                 Tool database (18 tools with failure trees)
+packages/
+  cli/                      The `preprompt` npm package (CLI)
+    src/
+      index.ts              CLI entrypoint (Commander.js, 11 commands)
+      types.ts              Shared types (RunResult, Snapshot, EvalResult, etc.)
+      scanner.ts            Prompt safety scanner (destructive pattern detection)
+      storage.ts            Result persistence (.preprompt/runs/)
+      matrix.ts             Smart matrix: regex-based tool detection from tools/db.json
+      trace.ts              Execution trace builder and renderer
+      evaluate.ts           Deterministic evaluation (runs check commands in sandbox)
+      errors.ts             Error hint system (pattern matching agent failures)
+      completions.ts        Zsh completion generator
+      commands/
+        local.ts            Core: run prompt, evaluate behavior, render via Ink
+        doctor.ts           Diagnose failures using AI agent analysis
+        fix.ts              Auto-suggest prompt rewrites for failures
+        compare.ts          Before/after comparison of two runs
+        badge.ts            SVG badge generator from run results
+        explain.ts          Agent behavior profiles (strengths, weaknesses, quirks)
+      agents/
+        types.ts            AgentAdapter interface
+        detector.ts         Auto-detect installed agents
+        claude-code.ts      Claude Code adapter
+        codex.ts            Codex adapter
+        aider.ts            Aider adapter
+        copilot.ts          GitHub Copilot CLI adapter
+      sandbox/
+        manager.ts          Temp directory lifecycle (create/destroy)
+        snapshot.ts         Filesystem before/after snapshots + diff
+      ui/
+        App.tsx             Main Ink React component (Static + dynamic sections)
+        AgentTask.tsx       Agent task display (spinner, status, history)
+        Spinner.tsx         Braille spinner component
+        render.ts           Ink render entry point + UIController API
+      output/
+        terminal.ts         chalk-based rendering for non-Ink commands (diff, trace, etc.)
+    tools/
+      db.json               Tool database (18 tools with failure trees)
+    test/                   52 tests across 7 files
+turbo.json                  Turborepo config
 ```
 
 ## Commands
 
 ```bash
-npm run build           # Build with tsup
-npm run test            # Run tests with vitest
-npm run dev             # Watch mode build
+npm run build           # Build all packages (turbo)
+npm run test            # Run all tests (turbo)
+npm run dev             # Watch mode build (turbo)
+```
+
+Or within packages/cli:
+```bash
+cd packages/cli
+npm run build           # Build CLI with tsup
+npm run test            # Run CLI tests with vitest
 ```
 
 ## Testing
 
 ```bash
-npx vitest run
+npm run test            # From root (turbo)
+npx vitest run          # From packages/cli
 ```
 
-52 tests across 7 test files. Mock agent at `test/mock-agent.sh` for CI testing without real AI agents.
+52 tests across 7 test files. Mock agent at `packages/cli/test/mock-agent.sh` for CI testing without real AI agents.
 
 ## Architecture
 
@@ -89,9 +101,9 @@ When making changes, update CLAUDE.md, DESIGN.md, and README.md where relevant. 
 
 Push normally. Only patch and publish when the user asks:
 ```bash
-npm version patch && git push && git push --tags
+cd packages/cli && npm version patch && cd ../.. && git add -A && git commit -m "$(cd packages/cli && node -p \"require('./package.json').version\")" && git push && git tag "v$(cd packages/cli && node -p \"require('./package.json').version\")" && git push --tags
 ```
-GitHub Actions publishes to npm automatically on tag push.
+GitHub Actions publishes to npm automatically on tag push. The publish workflow runs from `packages/cli/`.
 
 ## Package
 
