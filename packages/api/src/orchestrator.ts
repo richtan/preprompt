@@ -104,13 +104,15 @@ async function runAgent(
     const execCmd = AGENT_EXEC[agent]
     if (!execCmd) throw new Error(`No exec command for agent: ${agent}`)
 
+    let stderrBuf = ""
     const result = await sandbox.exec(execCmd(promptPath), {
       timeout: 120_000,
       env,
       onStdout: (chunk) => {
-        // TODO: parse agent-specific stdout into typed events
-        // For now, emit raw status
         onEvent({ event: "agent.status", data: { agent, status: "running", message: chunk.slice(0, 200) } })
+      },
+      onStderr: (chunk) => {
+        stderrBuf += chunk + "\n"
       },
     })
 
@@ -130,7 +132,7 @@ async function runAgent(
         duration,
         status: passed ? "pass" : "fail",
         fileSummary: `+${fileSummary.length}`,
-        error: passed ? undefined : (result.stderr || result.stdout).slice(0, 500),
+        error: passed ? undefined : (stderrBuf || result.stderr || result.stdout).slice(0, 500),
       },
     })
 
