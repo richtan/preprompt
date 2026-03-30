@@ -25,10 +25,11 @@ describe("API server", () => {
       body: JSON.stringify({ prompt: "Create a hello world app" }),
     })
     expect(res.status).toBe(201)
-    const body = await res.json()
+    const body = await res.json() as any
     expect(body.id).toBeDefined()
     expect(body.agents).toEqual(["claude-code", "codex", "aider", "copilot"])
     expect(body.streamUrl).toContain(body.id)
+    expect(body.promptHash).toBeDefined()
   })
 
   it("filters to known agents", async () => {
@@ -38,7 +39,7 @@ describe("API server", () => {
       body: JSON.stringify({ prompt: "test", agents: ["claude-code", "fake-agent"] }),
     })
     expect(res.status).toBe(201)
-    const body = await res.json()
+    const body = await res.json() as any
     expect(body.agents).toEqual(["claude-code"])
   })
 
@@ -55,5 +56,10 @@ describe("API server", () => {
     const res = await app.request("/api/runs/test-id/stream")
     expect(res.status).toBe(200)
     expect(res.headers.get("content-type")).toContain("text/event-stream")
+  })
+
+  it("returns 404 for unknown run", async () => {
+    const res = await app.request("/api/runs/nonexistent-id")
+    expect(res.status).toBe(404)
   })
 })

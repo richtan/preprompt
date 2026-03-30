@@ -10,10 +10,12 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@e2b/code-interpreter": "^2.4.0",
     "@hono/node-server": "^1.15.0",
     "@neondatabase/serverless": "^1.0.2",
     "dotenv": "^17.3.1",
     "drizzle-orm": "^0.45.2",
+    "e2b": "^2.18.0",
     "hono": "^4.7.0"
   },
   "devDependencies": {
