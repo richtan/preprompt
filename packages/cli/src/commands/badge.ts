@@ -87,6 +87,9 @@ function shortName(agent: string): string {
     "claude-code": "Claude",
     codex: "Codex",
     "copilot-cli": "Copilot",
+    cursor: "Cursor",
+    gemini: "Gemini",
+    opencode: "OpenCode",
   }
   return map[agent] ?? agent
 }

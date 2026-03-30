@@ -64,24 +64,96 @@ const profiles: AgentProfile[] = [
     name: "copilot-cli",
     fullName: "GitHub Copilot CLI",
     description:
-      "GitHub's AI CLI assistant. Primarily suggests shell commands rather than creating files directly.",
+      "GitHub's standalone coding agent. Full autopilot mode with file creation, editing, and shell commands.",
     strengths: [
-      "Integrated with GitHub ecosystem",
-      "Good at suggesting shell commands",
-      "Understands git workflows well",
+      "Integrated with GitHub ecosystem and MCP servers",
+      "Full coding agent with file and shell tools",
+      "Structured JSONL output format",
     ],
     weaknesses: [
-      "Suggests commands rather than executing them",
-      "Not designed for multi-file project creation",
-      "Limited to shell command suggestions",
+      "Requires GitHub Copilot subscription",
+      "Output schema is undocumented and evolving",
+      "Can be slow on complex multi-step tasks",
     ],
     quirks: [
-      "Invoked via gh copilot suggest",
-      "Returns command suggestions, not execution",
-      "Best for single-command tasks",
+      "Standalone copilot binary, not gh extension",
+      "Uses --autopilot for non-interactive mode",
+      "Emits report_intent events before starting work",
     ],
-    invocation: "gh copilot suggest <prompt>",
-    nonInteractive: "gh copilot suggest -t shell <prompt>",
+    invocation: "copilot -p <prompt>",
+    nonInteractive: "copilot --autopilot --allow-all -p <prompt>",
+  },
+  {
+    name: "cursor",
+    fullName: "Cursor Agent (Cursor)",
+    description:
+      "Cursor's standalone CLI agent. Full coding agent with file editing, shell commands, and MCP support.",
+    strengths: [
+      "Fast execution with streaming output",
+      "Good at multi-file project creation",
+      "Same tool interface as Claude Code",
+      "Supports MCP servers for extensibility",
+    ],
+    weaknesses: [
+      "Requires Cursor subscription",
+      "Agent binary installed separately from the IDE",
+      "No stdin support for large prompts in print mode",
+    ],
+    quirks: [
+      "Same tool names as Claude Code (Write, Edit, Bash)",
+      "Uses --force to auto-approve file changes",
+      "Prompt passed as positional arg, not -p flag",
+    ],
+    invocation: "agent --print <prompt>",
+    nonInteractive: "agent --print --force --trust <prompt>",
+  },
+  {
+    name: "gemini",
+    fullName: "Gemini CLI (Google)",
+    description:
+      "Google's open-source CLI coding agent. Uses Gemini models with a generous free tier.",
+    strengths: [
+      "Free tier: 60 req/min, 1000 req/day",
+      "Open source (Apache 2.0)",
+      "Parallel tool execution",
+      "Google Search grounding for web queries",
+    ],
+    weaknesses: [
+      "Requires GEMINI_API_KEY or Google OAuth setup",
+      "Newer tool with evolving output format",
+      "No dedicated edit tool (uses replace)",
+    ],
+    quirks: [
+      "Uses replace instead of edit for file modifications",
+      "-p flag must come after all other flags",
+      "Stdin content is appended to -p prompt text",
+    ],
+    invocation: "gemini -p <prompt>",
+    nonInteractive: "gemini -y -p <prompt>",
+  },
+  {
+    name: "opencode",
+    fullName: "OpenCode (Anomaly)",
+    description:
+      "Open-source terminal coding agent. Supports multiple AI providers and a headless server mode.",
+    strengths: [
+      "Provider-agnostic (works with any LLM provider)",
+      "Server mode avoids cold start on repeated runs",
+      "Rich tool set including LSP integration",
+      "Session export and import for collaboration",
+    ],
+    weaknesses: [
+      "Newer project, smaller community",
+      "JSON output can have edge cases with --command flag",
+      "No built-in sandbox mode",
+    ],
+    quirks: [
+      "Uses opencode run for headless execution",
+      "Supports attach to a running server for faster starts",
+      "Tool events arrive pre-completed (status: completed)",
+    ],
+    invocation: "opencode run <prompt>",
+    nonInteractive: "opencode run <prompt> --format json",
   },
 ]
 

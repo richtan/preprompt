@@ -4,12 +4,18 @@
 export const AGENT_TEMPLATES: Record<string, string> = {
   "claude-code": "preprompt-claude-code",
   "codex": "preprompt-codex",
-  "copilot": "base", // No pre-built template yet
+  "copilot-cli": "base",
+  "cursor": "base",
+  "gemini": "base",
+  "opencode": "base",
 }
 
 // Agent name → install commands (only needed for agents without pre-built templates)
 export const AGENT_SETUP: Record<string, string[]> = {
-  "copilot": ["npm install -g @githubnext/github-copilot-cli"],
+  "copilot-cli": ["curl -fsSL https://copilot.github.com/install | bash"],
+  "cursor": ["curl https://cursor.com/install -fsS | bash"],
+  "gemini": ["npm install -g @google/gemini-cli"],
+  "opencode": ["curl -fsSL https://opencode.ai/install | bash"],
 }
 
 // Agent name → the command to execute the agent with a prompt
@@ -17,5 +23,8 @@ export const AGENT_SETUP: Record<string, string[]> = {
 export const AGENT_EXEC: Record<string, (promptPath: string) => string> = {
   "claude-code": (p) => `cat ${p} | claude --print --dangerously-skip-permissions --output-format text`,
   "codex": (p) => `codex exec --full-auto --skip-git-repo-check "$(cat ${p})"`,
-  "copilot": (p) => `gh copilot suggest -t shell "$(cat ${p})"`,
+  "copilot-cli": (p) => `copilot --autopilot --allow-all --output-format json -p "$(cat ${p})"`,
+  "cursor": (p) => `agent --print --force --trust "$(cat ${p})"`,
+  "gemini": (p) => `cat ${p} | gemini -y -o text -p ""`,
+  "opencode": (p) => `cat ${p} | opencode run --format default`,
 }

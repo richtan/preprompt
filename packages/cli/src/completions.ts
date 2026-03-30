@@ -18,7 +18,7 @@ _preprompt() {
   )
 
   local -a agents
-  agents=('claude-code' 'codex' 'copilot-cli')
+  agents=('claude-code' 'codex' 'copilot-cli' 'cursor' 'gemini' 'opencode')
 
   local -a presets
   presets=('empty' 'node' 'nextjs' 'python' 'monorepo' 'docker')

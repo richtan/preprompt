@@ -30,6 +30,9 @@ packages/
         claude-code.ts      Claude Code adapter
         codex.ts            Codex adapter
         copilot.ts          GitHub Copilot CLI adapter
+        cursor.ts           Cursor Agent CLI adapter
+        gemini.ts           Gemini CLI adapter
+        opencode.ts         OpenCode adapter
       sandbox/
         manager.ts          Temp directory lifecycle (create/destroy)
         snapshot.ts         Filesystem before/after snapshots + diff
@@ -72,7 +75,7 @@ npx vitest run          # From packages/cli
 
 ## Architecture
 
-- 3 agent adapters (claude-code, codex, copilot-cli)
+- 6 agent adapters (claude-code, codex, copilot-cli, cursor, gemini, opencode)
 - Parallel execution via Promise.allSettled
 - Sandbox uses Node built-in `fs.mkdtemp()`, no tmp-promise
 - Prompt >100KB piped via stdin to avoid shell arg limits

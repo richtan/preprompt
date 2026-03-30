@@ -2,11 +2,14 @@ import { describe, it, expect } from "vitest"
 import { detectAgents, getAdapter, getInstalledAdapters } from "../src/agents/detector.js"
 
 describe("detectAgents", () => {
-  it("returns an array of agent info", async () => {
+  it("returns an array of agent info for all 6 adapters", async () => {
     const agents = await detectAgents()
 
     expect(Array.isArray(agents)).toBe(true)
-    expect(agents.length).toBeGreaterThan(0)
+    expect(agents.length).toBe(6)
+
+    const names = agents.map((a) => a.name).sort()
+    expect(names).toEqual(["claude-code", "codex", "copilot-cli", "cursor", "gemini", "opencode"])
 
     for (const agent of agents) {
       expect(agent).toHaveProperty("name")
