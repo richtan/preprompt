@@ -304,6 +304,9 @@ async function runSingleAgent(
         for (const p of sandboxPaths) {
           clean = clean.replaceAll(p + "/", "").replaceAll(p, ".")
         }
+        // Strip preprompt temp file references (e.g. /tmp/preprompt-8mlw1h-server.log → server.log)
+        clean = clean.replace(/\/tmp\/preprompt-[a-z0-9]+-/g, "")
+        clean = clean.replace(/\/tmp\/preprompt-[a-z0-9]+\b/g, ".")
         // Use first line only for multi-line commands
         const firstLine = clean.split("\n")[0]
         ui.addAgentHistory(agentName, type, firstLine)
@@ -546,6 +549,9 @@ export async function runLocal(
       )
       runResults.push(result)
 
+      // Set result so AgentTask can show duration during eval
+      if (ui) ui.setAgentResult(result.agent, agentResult)
+
       // Evaluate immediately in the agent's sandbox
       if (criteria.length > 0) {
         const onStepStart = ui
@@ -564,7 +570,7 @@ export async function runLocal(
         }
       }
 
-      if (ui) ui.completeAgent(result.agent, agentResult)
+      if (ui) ui.completeAgent(result.agent)
       await sandbox.destroy()
     } catch (error) {
       // Agent failed to run
@@ -580,7 +586,10 @@ export async function runLocal(
         timestamp: Date.now(),
       }
       runResults.push(errorResult)
-      if (ui) ui.completeAgent(adapter.name, { status: "error", duration: 0, fileSummary: "no files", error: error instanceof Error ? error.message : String(error) })
+      if (ui) {
+        ui.setAgentResult(adapter.name, { status: "error", duration: 0, fileSummary: "no files", error: error instanceof Error ? error.message : String(error) })
+        ui.completeAgent(adapter.name)
+      }
     }
   }
 

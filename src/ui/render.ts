@@ -9,7 +9,8 @@ export interface UIController {
   startAgent(name: string): void
   updateAgentStatus(name: string, status: string): void
   addAgentHistory(name: string, type: ActionType, text: string): void
-  completeAgent(name: string, result: AgentState["result"]): void
+  setAgentResult(name: string, result: AgentState["result"]): void
+  completeAgent(name: string): void
   finish(): void
 }
 
@@ -60,9 +61,18 @@ export function renderApp(): UIController {
       update()
     },
 
-    completeAgent(name: string, result: AgentState["result"]) {
+    setAgentResult(name: string, result: AgentState["result"]) {
       const agent = state.agents.get(name)
-      if (!agent || !result) return
+      if (!agent) return
+      agent.result = result
+      update()
+    },
+
+    completeAgent(name: string) {
+      const agent = state.agents.get(name)
+      if (!agent) return
+      const result = agent.result
+      if (!result) return
 
       const color = result.status === "pass" ? chalk.green
         : result.status === "timeout" ? chalk.yellow

@@ -1,4 +1,3 @@
-import { useState, useEffect } from "react"
 import { Box, Text } from "ink"
 import Spinner from "./Spinner.js"
 import type { ActionType } from "../agents/types.js"
@@ -36,17 +35,7 @@ function historyVerb(type: ActionType): string {
   }
 }
 
-export default function AgentTask({ name, status, history, done, result }: AgentTaskProps) {
-  const [elapsed, setElapsed] = useState(0)
-
-  useEffect(() => {
-    const start = Date.now()
-    const timer = setInterval(() => {
-      setElapsed(Date.now() - start)
-    }, 100)
-    return () => clearInterval(timer)
-  }, [])
-
+export default function AgentTask({ name, history, result }: AgentTaskProps) {
   const past = history.slice(0, -1)
   const current = history.length > 0 ? history[history.length - 1] : null
 
@@ -55,7 +44,7 @@ export default function AgentTask({ name, status, history, done, result }: Agent
       <Box>
         <Spinner />
         <Text> {name}</Text>
-        <Text dimColor>  ({formatDur(elapsed)})</Text>
+        {result && <Text dimColor>  {formatDur(result.duration)}</Text>}
       </Box>
       {past.map((h, i) => (
         <Text key={`h-${i}`}>    <Text color="green">●</Text> {historyVerb(h.type)} <Text dimColor>{h.text}</Text></Text>

@@ -11,6 +11,18 @@ interface ExtractedAction {
   actionText: string
 }
 
+function stripShellWrappers(cmd: string): string {
+  let prev = ""
+  while (prev !== cmd) {
+    prev = cmd
+    const m = cmd.match(
+      /^(?:\/(?:usr\/)?bin\/)?(?:z|ba)?sh\s+-\w*c\s+(?:'([\s\S]*)'|"([\s\S]*)")\s*$/
+    )
+    if (m) cmd = (m[1] ?? m[2] ?? cmd).trim()
+  }
+  return cmd
+}
+
 function extractAction(event: any): ExtractedAction | null {
   if (event.type !== "item.completed") return null
   const item = event.item
@@ -38,8 +50,7 @@ function extractAction(event: any): ExtractedAction | null {
     }
     case "command_execution": {
       let cmd = String(item.command ?? item.args?.[0] ?? "")
-      const shellMatch = cmd.match(/^\/bin\/(?:z|ba)?sh\s+-\w*c\s+(?:'([^']*)'|"([^"]*)"|(\S+))$/)
-      if (shellMatch) cmd = shellMatch[1] ?? shellMatch[2] ?? shellMatch[3] ?? cmd
+      cmd = stripShellWrappers(cmd)
       const status = cmd.length > 60 ? `Running ${cmd.slice(0, 57)}...` : `Running ${cmd}`
       return { status, actionType: "command", actionText: cmd }
     }
