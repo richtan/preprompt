@@ -19,17 +19,27 @@ class E2BSandboxHandle implements SandboxHandle {
       onStderr?: (chunk: string) => void
     }
   ) {
-    const result = await this.sandbox.commands.run(command, {
-      timeoutMs: opts?.timeout ?? 120_000,
-      envs: opts?.env,
-      onStdout: opts?.onStdout ? (data) => opts.onStdout!(data.line) : undefined,
-      onStderr: opts?.onStderr ? (data) => opts.onStderr!(data.line) : undefined,
-    })
+    try {
+      const result = await this.sandbox.commands.run(command, {
+        timeoutMs: opts?.timeout ?? 120_000,
+        envs: opts?.env,
+        onStdout: opts?.onStdout ? (data) => opts.onStdout!(data.line) : undefined,
+        onStderr: opts?.onStderr ? (data) => opts.onStderr!(data.line) : undefined,
+      })
 
-    return {
-      exitCode: result.exitCode,
-      stdout: result.stdout,
-      stderr: result.stderr,
+      return {
+        exitCode: result.exitCode,
+        stdout: result.stdout,
+        stderr: result.stderr,
+      }
+    } catch (err: unknown) {
+      // E2B may throw on non-zero exit codes — extract what we can
+      const e = err as any
+      return {
+        exitCode: e.exitCode ?? 1,
+        stdout: e.stdout ?? "",
+        stderr: e.stderr ?? e.message ?? String(err),
+      }
     }
   }
 
