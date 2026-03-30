@@ -6,146 +6,19 @@ import type { AgentInfo, ExecutionResult } from "../types.js"
 /**
  * GitHub Copilot CLI adapter.
  *
- * Supports the standalone `copilot` binary (GA Feb 2026) which acts as a
- * full coding agent with autopilot mode.
+ * Uses `--output-format json` to get structured JSONL events from the
+ * standalone `copilot` binary (GA Feb 2026).
  *
- *   copilot --autopilot --allow-all --no-color -p "prompt"
+ *   copilot --autopilot --allow-all --output-format json -p "prompt"
  *
- * We parse plain-text output rather than --output-format=json because the
- * JSON event schema is undocumented and changes between versions. Text output
- * is reliable: shell commands prefixed with `$` or `>`, file paths in
- * "Created/Edited/Wrote" lines, and status messages.
+ * Known tool names in JSONL events:
+ *   bash    — shell commands (arguments.command, arguments.description)
+ *   create  — file creation (arguments.path, arguments.file_text)
+ *   edit    — file editing (arguments.path, arguments.old_str, arguments.new_str)
+ *   view    — file reading (arguments.path) — read-only, skipped
+ *   report_intent — status announcement (arguments.intent)
+ *   task_complete — end marker (arguments.summary)
  */
-
-/**
- * Try to extract an action from a JSON event.
- * Copilot's JSON schema isn't documented, so we match liberally.
- */
-function tryParseJsonEvent(
-  event: any,
-  onAction: (type: "create" | "edit" | "command" | "other", text: string) => void,
-  onStatus: (status: string) => void
-): boolean {
-  const type = event.type ?? event.event ?? event.kind ?? ""
-  const tool = event.tool ?? event.name ?? event.action ?? ""
-  const args = event.args ?? event.arguments ?? event.params ?? {}
-  const path = args.path ?? args.file ?? event.path ?? event.file ?? ""
-  const cmd = args.command ?? args.cmd ?? event.command ?? ""
-  const text = event.content ?? event.text ?? event.message ?? event.body ?? ""
-
-  // File operations
-  if (/(?:create|write|add)_?file/i.test(tool) || (type === "file" && /create|add/i.test(event.action ?? ""))) {
-    onAction("create", path ? basename(path) : "file")
-    return true
-  }
-  if (/(?:edit|modify|update|patch)_?file/i.test(tool) || (type === "file" && /edit|modify/i.test(event.action ?? ""))) {
-    onAction("edit", path ? basename(path) : "file")
-    return true
-  }
-
-  // Command execution
-  if (/(?:run_?command|bash|shell|exec)/i.test(tool) || type === "command_execution") {
-    if (cmd) onAction("command", cmd)
-    return true
-  }
-
-  // Tool call (generic)
-  if (/tool.?call/i.test(type) && tool) {
-    if (path) {
-      onAction(/create|write|add/i.test(tool) ? "create" : "edit", basename(path))
-    } else if (cmd) {
-      onAction("command", cmd)
-    }
-    return true
-  }
-
-  // Text/message events
-  if (text && /message|text|status|info|log/i.test(type)) {
-    onStatus(String(text).slice(0, 200))
-    return true
-  }
-
-  // Item completed events (codex-style, copilot may use similar)
-  if (type === "item.completed" && event.item) {
-    const item = event.item
-    if (item.type === "command_execution" && (item.command || item.args?.[0])) {
-      onAction("command", String(item.command ?? item.args[0]))
-      return true
-    }
-    if (item.type === "file_change" && Array.isArray(item.changes)) {
-      for (const c of item.changes) {
-        const p = c.path ?? ""
-        onAction(c.kind === "add" ? "create" : "edit", p ? basename(p) : "file")
-      }
-      return true
-    }
-  }
-
-  return false
-}
-
-/**
- * Parse plain-text copilot output for file and command actions.
- */
-function parseTextOutput(
-  lines: string[],
-  onAction: (type: "create" | "edit" | "command" | "other", text: string) => void,
-  onStatus: (status: string) => void
-) {
-  const seenFiles = new Set<string>()
-  const seenCommands = new Set<string>()
-
-  for (const line of lines) {
-    const trimmed = line.trim()
-    if (!trimmed) continue
-
-    // Shell command patterns
-    if (trimmed.startsWith("$ ") || trimmed.startsWith("> ")) {
-      const cmd = trimmed.slice(2).trim()
-      if (cmd && !seenCommands.has(cmd)) {
-        seenCommands.add(cmd)
-        onAction("command", cmd)
-      }
-      continue
-    }
-
-    // "Running: <cmd>" or "Executing: <cmd>"
-    const runMatch = trimmed.match(/^(?:Running|Executing)[:\s]+(.+)$/i)
-    if (runMatch) {
-      const cmd = runMatch[1].trim()
-      if (cmd && !seenCommands.has(cmd)) {
-        seenCommands.add(cmd)
-        onAction("command", cmd)
-      }
-      continue
-    }
-
-    // "Created <file>" / "Wrote <file>" / "Added <file>"
-    const createMatch = trimmed.match(/^(?:Created|Wrote|Added|Creating|Writing)[:\s]+(.+)$/i)
-    if (createMatch) {
-      const file = createMatch[1].trim()
-      if (file && !seenFiles.has(file)) {
-        seenFiles.add(file)
-        onAction("create", basename(file))
-      }
-      continue
-    }
-
-    // "Edited <file>" / "Modified <file>" / "Updated <file>"
-    const editMatch = trimmed.match(/^(?:Edited|Modified|Updated|Editing|Modifying|Updating)[:\s]+(.+)$/i)
-    if (editMatch) {
-      const file = editMatch[1].trim()
-      if (file && !seenFiles.has(file)) {
-        seenFiles.add(file)
-        onAction("edit", basename(file))
-      }
-      continue
-    }
-
-    // Status lines
-    onStatus(trimmed.slice(0, 200))
-  }
-}
 
 export const copilot: AgentAdapter = {
   name: "copilot-cli",
@@ -184,7 +57,7 @@ export const copilot: AgentAdapter = {
     try {
       const proc = execa(
         "copilot",
-        ["--autopilot", "--allow-all", "--no-color", "-p", prompt],
+        ["--autopilot", "--allow-all", "--output-format", "json", "-p", prompt],
         {
           cwd: workdir,
           timeout: options.timeout,
@@ -192,55 +65,64 @@ export const copilot: AgentAdapter = {
         }
       )
 
-      const allLines: string[] = []
-      let actionsEmitted = 0
-
       if (proc.stdout) {
         let buf = ""
         proc.stdout.on("data", (chunk: Buffer) => {
           buf += chunk.toString()
           const lines = buf.split("\n")
           buf = lines.pop() ?? ""
+
           for (const line of lines) {
-            allLines.push(line)
             const trimmed = line.trim()
             if (!trimmed) continue
 
-            // Try JSON parse first (copilot might emit structured events)
+            let event: any
             try {
-              const event = JSON.parse(trimmed)
-              const matched = tryParseJsonEvent(
-                event,
-                (type, text) => {
-                  actionsEmitted++
-                  options.onAction?.(type, text)
-                },
-                (status) => options.onStatus?.(status)
-              )
-              if (matched) continue
+              event = JSON.parse(trimmed)
             } catch {
-              // Not JSON, continue to text parsing
+              continue
             }
 
-            // Real-time text status (non-command lines)
-            if (!trimmed.startsWith("$ ") && !trimmed.startsWith("> ")) {
-              options.onStatus?.(trimmed.slice(0, 200))
+            // Skip ephemeral events (deltas, MCP status, background tasks)
+            if (event.ephemeral) continue
+
+            const type = event.type as string
+            const data = event.data
+
+            if (type === "tool.execution_start") {
+              const toolName = data?.toolName as string
+              const args = data?.arguments ?? {}
+
+              if (toolName === "bash") {
+                if (args.command) {
+                  options.onAction?.("command", args.command)
+                }
+                options.onStatus?.(args.description ?? args.command ?? "")
+              } else if (toolName === "create") {
+                if (args.path) {
+                  options.onAction?.("create", basename(args.path))
+                }
+              } else if (toolName === "edit") {
+                if (args.path) {
+                  options.onAction?.("edit", basename(args.path))
+                }
+              } else if (toolName === "report_intent") {
+                if (args.intent) {
+                  options.onStatus?.(args.intent)
+                }
+              }
+              // view, task_complete, and unknown tools: skip
+            } else if (type === "assistant.message") {
+              const content = data?.content as string
+              if (content) {
+                options.onStatus?.(content.slice(0, 200))
+              }
             }
           }
         })
       }
 
       const result = await proc
-
-      // Post-execution: if no actions were emitted during streaming,
-      // parse the full output as text to extract file/command actions
-      if (actionsEmitted === 0 && options.onAction) {
-        parseTextOutput(
-          allLines,
-          options.onAction,
-          () => {} // status already streamed
-        )
-      }
 
       return {
         exitCode: result.exitCode ?? 1,
