@@ -583,25 +583,20 @@ export async function runLocal(
     await sandbox.destroy()
   }
 
-  // Summary + deferred failures after all agents done
+  // Summary + per-agent eval results after all agents done
   if (ui && evaluations.length > 0) {
-    const lines: string[] = [
-      " ",
-      `${chalk.green("Evaluated")} ${evaluations.length} agent${evaluations.length === 1 ? "" : "s"}`,
-    ]
+    const lines: string[] = [" "]
 
-    // Deferred failures section (only if any agent has failures)
-    const failing = evaluations.filter((e) => e.steps.some((s) => s.status === "fail"))
-    if (failing.length > 0) {
-      lines.push("")
-      for (let i = 0; i < failing.length; i++) {
-        if (i > 0) lines.push("")
-        const count = failing[i].steps.filter(s => s.status === "fail").length
-        lines.push(`${chalk.bold(failing[i].agent)}  ${chalk.red(`${count} failed`)}`)
-        for (const step of failing[i].steps) {
+    for (const evalResult of evaluations) {
+      const failed = evalResult.steps.filter((s) => s.status === "fail").length
+      if (failed > 0) {
+        lines.push(`${chalk.bold(evalResult.agent)}  ${chalk.red(`${failed} failed`)}`)
+        for (const step of evalResult.steps) {
           if (step.status !== "fail") continue
           lines.push(`    ${chalk.red("-")} ${step.description}`)
         }
+      } else {
+        lines.push(`${chalk.bold(evalResult.agent)}  ${chalk.green("0 failed")}`)
       }
     }
 

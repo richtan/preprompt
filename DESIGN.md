@@ -48,6 +48,13 @@ All agent processes are capped at 50MB `maxBuffer` to prevent stdout/stderr memo
 
 Agent execution runs in parallel. Evaluation runs sequentially after all agents complete — this prevents port collisions when checks start servers. Background processes are cleaned up after each agent's eval via `lsof`/`kill`.
 
+## Terminal rendering
+
+Raw ANSI cursor management, no framework (Ink/React removed). Two sections:
+
+- **Static:** Completed agents, console.log'd. Scrolls up permanently, never redrawn.
+- **Dynamic:** Active agents with spinners + history. Redrawn in-place every 80ms. Capped to `terminal rows - 2` lines. When content exceeds viewport, older history entries are trimmed per agent (full history appears when agent completes and moves to static). Lines truncated to terminal width to prevent wrapping.
+
 ## Dim text hierarchy
 
 - **Dim:** timing, prefixes (> for run, - for criteria dashes), error notes, supplementary info in parentheses
