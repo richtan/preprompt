@@ -3,6 +3,7 @@ import { readFile, writeFile } from "node:fs/promises"
 import { resolve } from "node:path"
 import { loadLatestResult, loadResult } from "../storage.js"
 import { getInstalledAdapters, detectAgents } from "../agents/detector.js"
+import { buildAgentEnv } from "../agents/env.js"
 import { renderError } from "../output/terminal.js"
 import type { RunResult, MultiRunResult } from "../types.js"
 
@@ -81,6 +82,7 @@ export async function runFix(opts: {
   try {
     const result = await analyzer.execute(fixPrompt, sandbox.dir, {
       timeout: opts.timeout,
+      env: buildAgentEnv(analyzer.name),
     })
 
     if (!result.stdout.trim()) {

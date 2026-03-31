@@ -111,6 +111,8 @@ export const gemini: AgentAdapter = {
         cwd: workdir,
         timeout: options.timeout,
         input: useStdin ? prompt : undefined,
+        env: options.env,
+        maxBuffer: 50_000_000,
         reject: false,
       })
 

@@ -1,9 +1,11 @@
 import { execa } from "execa"
+import { execSync } from "node:child_process"
 import { access } from "node:fs/promises"
 import { join } from "node:path"
 import type { AgentAdapter } from "./agents/types.js"
 import type { EvalResult, EvalStep, Criterion } from "./types.js"
 import { createSandbox } from "./sandbox/manager.js"
+import { buildAgentEnv, buildCheckEnv } from "./agents/env.js"
 
 const MAX_CRITERIA = 40
 const CHECK_TIMEOUT = 10_000
@@ -26,7 +28,11 @@ Criterion types:
 - "service": an endpoint or process that should work
 - "behavioral": something the agent should have done
 
-IMPORTANT: Every criterion MUST include a "check" field with an executable shell command that exits 0 on success and non-zero on failure. Checks must be read-only verification commands that do NOT install packages, create files, or modify the environment.
+IMPORTANT: Every criterion MUST include a "check" field with an executable shell command that exits 0 on success and non-zero on failure. Checks must NOT install packages, create files, or modify the environment.
+
+If a check starts a background process (e.g., a server), it MUST clean up after itself. Use this pattern for server checks:
+  "node src/index.js & PID=$!; sleep 1; curl -sf http://localhost:3000/health; CODE=$?; kill $PID 2>/dev/null; exit $CODE"
+Always kill background processes before exiting. Never leave servers running.
 
 Examples of good checks:
 - "test -f package.json"
@@ -34,6 +40,7 @@ Examples of good checks:
 - "grep -q PORT .env"
 - "node -e \\"const p = require('./package.json'); process.exit(p.scripts?.dev ? 0 : 1)\\""
 - "test -d node_modules/@types/node" (for @types/* packages, use test -d, NOT require())
+- "node src/index.js & PID=$!; sleep 1; curl -sf http://localhost:3000/health; CODE=$?; kill $PID 2>/dev/null; exit $CODE" (runtime server check with cleanup)
 
 Respond ONLY with this JSON (no markdown, no code fences):
 {"criteria":[{"number":1,"group":"Project setup","type":"file-exists","description":"package.json exists","check":"test -f package.json"},{"number":2,"group":"Dependencies","type":"command","description":"express is installed","check":"node -e \\"require('express')\\""}]}`
@@ -86,7 +93,10 @@ export async function generateCriteria(
   const sandbox = await createSandbox()
 
   try {
-    const result = await analyzerAdapter.execute(criteriaPrompt, sandbox.dir, { timeout: 30_000 })
+    const result = await analyzerAdapter.execute(criteriaPrompt, sandbox.dir, {
+      timeout: 30_000,
+      env: buildAgentEnv(analyzerAdapter.name),
+    })
     const criteria = parseCriteriaResponse(result.stdout)
     return criteria ?? []
   } catch {
@@ -127,10 +137,7 @@ export async function evaluateInSandbox(
   let passCount = 0
   let totalCount = 0
 
-  const env = {
-    ...process.env,
-    PATH: `${join(sandboxDir, "node_modules", ".bin")}:${process.env.PATH}`,
-  }
+  const env = buildCheckEnv(sandboxDir)
 
   for (let i = 0; i < criteria.length; i++) {
     const criterion = criteria[i]
@@ -185,11 +192,24 @@ export async function evaluateInSandbox(
 
   const score = totalCount > 0 ? Math.round((passCount / totalCount) * 100) : 0
 
+  cleanupSandboxProcesses(sandboxDir)
+
   return {
     agent,
     criteria,
     steps,
     score,
     duration: Date.now() - start,
+  }
+}
+
+export function cleanupSandboxProcesses(sandboxDir: string): void {
+  try {
+    execSync(
+      `lsof -t +D "${sandboxDir}" 2>/dev/null | xargs kill -9 2>/dev/null`,
+      { timeout: 5000, stdio: "ignore" }
+    )
+  } catch {
+    // Best-effort cleanup
   }
 }

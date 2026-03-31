@@ -40,6 +40,14 @@ uv is the gold standard. When in doubt about how output should look, check what 
 
 **Blank lines.** Between agent blocks in static output. Between phases (criteria → agents → scores). No horizontal rules.
 
+## Agent isolation
+
+Each agent runs with a filtered environment. A denylist strips API keys belonging to other agents (e.g., claude-code never sees `OPENAI_API_KEY`). Non-secret vars (PATH, proxies, npm config) are always preserved. Eval check commands get all secrets stripped since they only run verification commands like `test -f` and `grep -q`.
+
+All agent processes are capped at 50MB `maxBuffer` to prevent stdout/stderr memory exhaustion.
+
+Agent execution runs in parallel. Evaluation runs sequentially after all agents complete — this prevents port collisions when checks start servers. Background processes are cleaned up after each agent's eval via `lsof`/`kill`.
+
 ## Dim text hierarchy
 
 - **Dim:** timing, prefixes (> for run, - for criteria dashes), error notes, supplementary info in parentheses

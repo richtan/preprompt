@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest"
 import { mkdtemp, writeFile, mkdir, rm } from "node:fs/promises"
 import { join } from "node:path"
 import { tmpdir } from "node:os"
-import { evaluateInSandbox } from "../src/evaluate.js"
+import { evaluateInSandbox, cleanupSandboxProcesses } from "../src/evaluate.js"
 import type { Criterion } from "../src/types.js"
 
 describe("evaluateInSandbox", () => {
@@ -104,6 +104,14 @@ describe("evaluateInSandbox", () => {
       { checked: 1, total: 2 },
       { checked: 2, total: 2 },
     ])
+  })
+
+  it("cleanupSandboxProcesses does not throw on empty sandbox", async () => {
+    cleanupSandboxProcesses(sandboxDir)
+  })
+
+  it("cleanupSandboxProcesses does not throw on nonexistent dir", () => {
+    cleanupSandboxProcesses("/nonexistent/path")
   })
 
   it("includes node_modules/.bin in PATH", async () => {

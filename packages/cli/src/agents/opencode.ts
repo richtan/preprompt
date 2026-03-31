@@ -62,6 +62,8 @@ export const opencode: AgentAdapter = {
         cwd: workdir,
         timeout: options.timeout,
         input: prompt,
+        env: options.env,
+        maxBuffer: 50_000_000,
         reject: false,
       })
 

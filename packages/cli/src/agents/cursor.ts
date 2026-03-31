@@ -80,6 +80,8 @@ export const cursor: AgentAdapter = {
       const proc = execa("agent", args, {
         cwd: workdir,
         timeout: options.timeout,
+        env: options.env,
+        maxBuffer: 50_000_000,
         reject: false,
       })
 

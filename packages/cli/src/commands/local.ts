@@ -4,7 +4,8 @@ import { resolve } from "node:path"
 import { emitKeypressEvents } from "node:readline"
 import { detectAgents, getInstalledAdapters } from "../agents/detector.js"
 import type { AgentAdapter, ActionType } from "../agents/types.js"
-import { createSandbox } from "../sandbox/manager.js"
+import { createSandbox, type Sandbox } from "../sandbox/manager.js"
+import { buildAgentEnv } from "../agents/env.js"
 import { captureSnapshot, diffSnapshots } from "../sandbox/snapshot.js"
 import {
   renderRunResult,
@@ -329,7 +330,7 @@ async function runSingleAgent(
     const execution = await adapter.execute(
       `Follow these instructions exactly in the current directory:\n\n${promptContent}`,
       sandbox.dir,
-      { timeout, onStatus, onAction }
+      { timeout, env: buildAgentEnv(adapter.name), onStatus, onAction }
     )
 
     const after = await captureSnapshot(sandbox.dir)
@@ -521,7 +522,7 @@ export async function runLocal(
     ui = renderApp()
   }
 
-  // 5. Run all agents in parallel, evaluate each immediately after completion
+  // 5. Run all agents in parallel
   if (ui) {
     for (const adapter of installed) {
       ui.startAgent(adapter.name)
@@ -530,40 +531,24 @@ export async function runLocal(
 
   const runResults: RunResult[] = []
   const evaluations: EvalResult[] = []
+  const pendingEvals: { result: RunResult; sandbox: Sandbox }[] = []
 
-  async function runAndEvaluate(adapter: AgentAdapter): Promise<void> {
+  async function runAgent(adapter: AgentAdapter): Promise<void> {
     try {
       const { result, sandbox, agentResult } = await runSingleAgent(
         adapter, promptContent, promptFile, options.timeout, ui
       )
       runResults.push(result)
 
-      // Set result so AgentTask can show duration during eval
       if (ui) ui.setAgentResult(result.agent, agentResult)
-
-      // Evaluate immediately in the agent's sandbox
-      if (criteria.length > 0) {
-        const onStepStart = ui
-          ? (index: number, total: number, _description: string) => {
-              ui.setAgentChecking(result.agent, index, total)
-            }
-          : undefined
-
-        try {
-          const evalResult = await evaluateInSandbox(
-            result.agent, criteria, sandbox.dir, undefined, onStepStart
-          )
-          evaluations.push(evalResult)
-          if (ui) ui.setAgentEval(result.agent, evalResult)
-        } catch {
-          // Evaluation failed
-        }
-      }
-
       if (ui) ui.completeAgent(result.agent)
-      await sandbox.destroy()
+
+      if (criteria.length > 0) {
+        pendingEvals.push({ result, sandbox })
+      } else {
+        await sandbox.destroy()
+      }
     } catch (error) {
-      // Agent failed to run
       const errorResult: RunResult = {
         agent: adapter.name,
         prompt: promptFile ?? "(inline)",
@@ -583,7 +568,20 @@ export async function runLocal(
     }
   }
 
-  await Promise.allSettled(installed.map((adapter) => runAndEvaluate(adapter)))
+  await Promise.allSettled(installed.map((adapter) => runAgent(adapter)))
+
+  // 6. Evaluate sequentially (prevents port collisions between agents)
+  for (const { result, sandbox } of pendingEvals) {
+    try {
+      const evalResult = await evaluateInSandbox(
+        result.agent, criteria, sandbox.dir
+      )
+      evaluations.push(evalResult)
+    } catch {
+      // Evaluation failed
+    }
+    await sandbox.destroy()
+  }
 
   // Summary + deferred failures after all agents done
   if (ui && evaluations.length > 0) {
