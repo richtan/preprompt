@@ -32,6 +32,9 @@ jobs:
             exit 1
           fi
 
+      - run: cp ../../README.md .
+        working-directory: packages/cli
+
       - run: npm publish --access public
         working-directory: packages/cli
         env:
