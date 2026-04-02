@@ -3,7 +3,6 @@ import type { ActionType } from "../agents/types.js"
 import type { EvalResult } from "../types.js"
 
 const FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
-const MAX_HISTORY = 15
 
 export interface AgentResult {
   status: "pass" | "fail" | "timeout" | "error" | "no-changes"
@@ -153,39 +152,16 @@ export function buildDynamicLines(
     const agent = agentList[i]
     lines.push(buildHeaderLine(agent, frame))
 
-    const allHistory = buildHistoryLines(agent.history)
-    const failureItems = agent.evalResult
-      ? agent.evalResult.steps.filter((s) => s.status === "fail")
-      : []
-
-    if (failureItems.length > 0 && perAgent > 0) {
-      const failureBudget = Math.min(failureItems.length + 1, perAgent)
-      const histBudget = Math.max(0, perAgent - failureBudget)
-
-      const willTrim = allHistory.length > histBudget
-      const historySlots = willTrim ? Math.max(0, histBudget - 1) : Math.min(histBudget, allHistory.length)
-      const visible = historySlots > 0 ? allHistory.slice(-historySlots) : []
-
-      const trimmed = allHistory.length - historySlots
-      if (trimmed > 0) {
-        lines.push(chalk.dim(`    ... ${trimmed} more`))
-      }
-
-      if (visible.length > 0 && !agent.result && !agent.checking) {
-        const last = agent.history[agent.history.length - 1]
-        if (last) {
-          visible[visible.length - 1] = `    ${FRAMES[frame % FRAMES.length]} ${last.text}`
+    if (agent.evalResult) {
+      const failures = agent.evalResult.steps.filter((s) => s.status === "fail")
+      if (failures.length > 0 && perAgent > 0) {
+        const shown = failures.slice(0, perAgent)
+        for (const step of shown) {
+          lines.push(chalk.red(`    - ${step.description}`))
         }
       }
-
-      lines.push(...visible)
-
-      lines.push("")
-      const shownFailures = failureItems.slice(0, failureBudget - 1)
-      for (const step of shownFailures) {
-        lines.push(chalk.red(`    - ${step.description}`))
-      }
     } else {
+      const allHistory = buildHistoryLines(agent.history)
       const willTrim = allHistory.length > perAgent
       const historySlots = willTrim ? Math.max(0, perAgent - 1) : Math.min(perAgent, allHistory.length)
       const visible = historySlots > 0 ? allHistory.slice(-historySlots) : []
@@ -293,7 +269,6 @@ export function renderApp(): UIController {
       const last = agent.history[agent.history.length - 1]
       if (last && last.type === type && last.text === text) return
       agent.history.push({ type, text })
-      if (agent.history.length > MAX_HISTORY) agent.history.shift()
     },
 
     setAgentResult(name: string, result: AgentResult) {
