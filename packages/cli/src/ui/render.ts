@@ -154,34 +154,55 @@ export function buildDynamicLines(
     lines.push(buildHeaderLine(agent, frame))
 
     const allHistory = buildHistoryLines(agent.history)
-    // Reserve 1 line for trim indicator if history will be truncated
-    const willTrim = allHistory.length > perAgent
-    const historySlots = willTrim ? Math.max(0, perAgent - 1) : Math.min(perAgent, allHistory.length)
-    const visible = historySlots > 0 ? allHistory.slice(-historySlots) : []
+    const failureItems = agent.evalResult
+      ? agent.evalResult.steps.filter((s) => s.status === "fail")
+      : []
 
-    const trimmed = allHistory.length - historySlots
-    if (trimmed > 0) {
-      lines.push(chalk.dim(`    ... ${trimmed} more`))
-    }
+    if (failureItems.length > 0 && perAgent > 0) {
+      const failureBudget = Math.min(failureItems.length + 1, perAgent)
+      const histBudget = Math.max(0, perAgent - failureBudget)
 
-    // Replace the last visible entry with a spinner prefix if agent is still working
-    if (visible.length > 0 && !agent.result && !agent.checking) {
-      const last = agent.history[agent.history.length - 1]
-      if (last) {
-        visible[visible.length - 1] = `    ${FRAMES[frame % FRAMES.length]} ${last.text}`
+      const willTrim = allHistory.length > histBudget
+      const historySlots = willTrim ? Math.max(0, histBudget - 1) : Math.min(histBudget, allHistory.length)
+      const visible = historySlots > 0 ? allHistory.slice(-historySlots) : []
+
+      const trimmed = allHistory.length - historySlots
+      if (trimmed > 0) {
+        lines.push(chalk.dim(`    ... ${trimmed} more`))
       }
-    }
 
-    lines.push(...visible)
-
-    if (agent.evalResult) {
-      const failures = agent.evalResult.steps.filter((s) => s.status === "fail")
-      if (failures.length > 0) {
-        lines.push("")
-        for (const step of failures) {
-          lines.push(chalk.red(`    - ${step.description}`))
+      if (visible.length > 0 && !agent.result && !agent.checking) {
+        const last = agent.history[agent.history.length - 1]
+        if (last) {
+          visible[visible.length - 1] = `    ${FRAMES[frame % FRAMES.length]} ${last.text}`
         }
       }
+
+      lines.push(...visible)
+
+      lines.push("")
+      const shownFailures = failureItems.slice(0, failureBudget - 1)
+      for (const step of shownFailures) {
+        lines.push(chalk.red(`    - ${step.description}`))
+      }
+    } else {
+      const willTrim = allHistory.length > perAgent
+      const historySlots = willTrim ? Math.max(0, perAgent - 1) : Math.min(perAgent, allHistory.length)
+      const visible = historySlots > 0 ? allHistory.slice(-historySlots) : []
+
+      const trimmed = allHistory.length - historySlots
+      if (trimmed > 0) {
+        lines.push(chalk.dim(`    ... ${trimmed} more`))
+      }
+
+      if (visible.length > 0 && !agent.result && !agent.checking) {
+        const last = agent.history[agent.history.length - 1]
+        if (last) {
+          visible[visible.length - 1] = `    ${FRAMES[frame % FRAMES.length]} ${last.text}`
+        }
+      }
+
+      lines.push(...visible)
     }
   }
 
@@ -211,9 +232,11 @@ export function renderApp(): UIController {
     if (finished) return
     if (!isTTY) return
 
-    const lines = buildDynamicLines(agents, spinnerFrame, getMaxLines())
+    const maxLines = getMaxLines()
     const cols = getCols()
-    const truncated = lines.map((l) => truncateLine(l, cols))
+    const raw = buildDynamicLines(agents, spinnerFrame, maxLines)
+    const capped = raw.length > maxLines ? raw.slice(0, maxLines) : raw
+    const truncated = capped.map((l) => truncateLine(l, cols))
 
     if (prevLineCount > 0) {
       process.stdout.moveCursor(0, -prevLineCount)
