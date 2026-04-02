@@ -125,19 +125,16 @@ export function renderDiff(multi: MultiRunResult): void {
 export function renderEvalResult(evalResult: EvalResult): void {
   const passed = evalResult.steps.filter((s) => s.status === "pass").length
   const total = evalResult.steps.length
-  const self = evalResult.agent === evalResult.evaluator ? chalk.dim(" (self-eval)") : ""
-
-  // Score line: always shown
   const scoreColor = evalResult.score >= 80 ? chalk.green
     : evalResult.score >= 50 ? chalk.yellow
     : chalk.red
-  console.log(`${evalResult.agent}  ${scoreColor(evalResult.score + "/100")}  ${passed}/${total} steps${self}`)
+  console.log(`${evalResult.agent}  ${scoreColor(evalResult.score + "/100")}  ${passed}/${total} steps`)
 
   // Failed/partial steps only: show what went wrong
   const failures = evalResult.steps.filter((s) => s.status !== "pass")
   if (failures.length > 0) {
     for (const step of failures) {
-      const icon = step.status === "partial" ? chalk.yellow("~") : chalk.red("✗")
+      const icon = chalk.red("✗")
       const desc = step.description
       console.log(`  ${icon} ${desc}`)
     }

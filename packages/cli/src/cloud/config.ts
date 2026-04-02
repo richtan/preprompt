@@ -26,8 +26,8 @@ export async function loadConfig(): Promise<CloudConfig> {
 }
 
 export async function saveConfig(config: CloudConfig): Promise<void> {
-  await mkdir(CONFIG_DIR, { recursive: true })
-  await writeFile(CONFIG_FILE, JSON.stringify(config, null, 2) + "\n")
+  await mkdir(CONFIG_DIR, { recursive: true, mode: 0o700 })
+  await writeFile(CONFIG_FILE, JSON.stringify(config, null, 2) + "\n", { mode: 0o600 })
 }
 
 export async function getApiUrl(): Promise<string> {

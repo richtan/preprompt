@@ -67,14 +67,21 @@ export const cursor: AgentAdapter = {
     const start = Date.now()
     const streaming = !!options.onStatus
 
-    const args = ["--print", "--force", "--trust"]
+    const STDIN_THRESHOLD = 8_000
+    const useStdin = prompt.length > STDIN_THRESHOLD
+
+    const args = ["--print"]
+    if (!options.textOnly) {
+      args.push("--force", "--trust")
+    }
 
     if (streaming) {
       args.push("--output-format", "stream-json")
     }
 
-    // Cursor takes prompt as positional arg (must come after flags)
-    args.push(prompt)
+    if (!useStdin) {
+      args.push(prompt)
+    }
 
     try {
       const proc = execa("agent", args, {
@@ -83,6 +90,7 @@ export const cursor: AgentAdapter = {
         env: options.env,
         maxBuffer: 50_000_000,
         reject: false,
+        input: useStdin ? prompt : undefined,
       })
 
       let finalText = ""

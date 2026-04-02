@@ -89,8 +89,10 @@ export const gemini: AgentAdapter = {
     const start = Date.now()
     const streaming = !!options.onStatus
 
-    // -y (yolo) must come before -p. -p must be last.
-    const args = ["-y"]
+    const args: string[] = []
+    if (!options.textOnly) {
+      args.push("-y")
+    }
 
     if (streaming) {
       args.push("-o", "stream-json")

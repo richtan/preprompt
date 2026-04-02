@@ -5,6 +5,7 @@ export type ActionType = "command" | "create" | "edit" | "other"
 export interface ExecuteOptions {
   timeout: number
   env?: Record<string, string>
+  textOnly?: boolean
   onStatus?: (status: string) => void
   onAction?: (type: ActionType, text: string) => void
   onStdout?: (chunk: string) => void

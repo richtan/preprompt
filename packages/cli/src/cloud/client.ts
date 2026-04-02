@@ -94,7 +94,7 @@ export async function streamRun(
       if (line.startsWith("event: ")) {
         currentEvent = line.slice(7)
       } else if (line.startsWith("data: ")) {
-        currentData = line.slice(6)
+        currentData += (currentData ? "\n" : "") + line.slice(6)
       } else if (line.startsWith("id: ")) {
         currentId = line.slice(4)
       } else if (line === "") {

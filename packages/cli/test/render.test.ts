@@ -44,10 +44,10 @@ describe("buildHeaderLine", () => {
     expect(line).toContain("52.4s")
   })
 
-  it("shows checking progress", () => {
-    const agent = makeAgent("gemini", 0, undefined, { index: 3, total: 25 })
+  it("shows checking status", () => {
+    const agent = makeAgent("gemini", 0, { duration: 15000 }, { index: 3, total: 25 })
     const line = buildHeaderLine(agent, 0)
-    expect(line).toContain("checking [3/25]")
+    expect(line).toContain("checking")
   })
 })
 
@@ -83,7 +83,7 @@ describe("buildStatusSuffix", () => {
       duration: 100,
     }
     const suffix = buildStatusSuffix(result, evalResult)
-    expect(suffix).toContain("passed")
+    expect(suffix).toContain("0 failed")
   })
 
   it("shows failed with eval failures", () => {

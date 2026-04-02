@@ -20,7 +20,7 @@ const program = new Command()
 program
   .name("preprompt")
   .description("Test any prompt on every AI tool.")
-  .version("0.1.0")
+  .version("0.2.17")
   .enablePositionalOptions()
   .passThroughOptions()
 
@@ -39,8 +39,14 @@ program
       prompt: string,
       opts: { timeout: string; json: boolean; quiet: boolean; agents?: string }
     ) => {
+      const timeout = parseInt(opts.timeout, 10)
+      if (!Number.isFinite(timeout) || timeout <= 0) {
+        console.error(chalk.red("error:") + " --timeout must be a positive number")
+        process.exitCode = 1
+        return
+      }
       await runLocal(prompt, {
-        timeout: parseInt(opts.timeout, 10),
+        timeout,
         json: opts.json,
         quiet: opts.quiet,
         agents: opts.agents,

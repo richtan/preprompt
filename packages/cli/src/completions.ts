@@ -12,6 +12,8 @@ _preprompt() {
     'fix:Suggest prompt rewrites to fix failures'
     'compare:Compare two runs before/after'
     'badge:Generate an SVG compatibility badge'
+    'cloud:Run a prompt on PrePrompt Cloud'
+    'login:Authenticate with PrePrompt Cloud'
     'explain:Show agent behavior profiles'
     'history:List past runs'
     'completions:Generate shell completions'

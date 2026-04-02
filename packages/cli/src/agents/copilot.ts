@@ -54,16 +54,20 @@ export const copilot: AgentAdapter = {
   ): Promise<ExecutionResult> {
     const start = Date.now()
 
+    const STDIN_THRESHOLD = 8_000
+
     try {
+      const useStdin = prompt.length > STDIN_THRESHOLD
       const proc = execa(
         "copilot",
-        ["--autopilot", "--allow-all", "--output-format", "json", "-p", prompt],
+        ["--autopilot", ...(options.textOnly ? [] : ["--allow-all"]), "--output-format", "json", ...(useStdin ? [] : ["-p", prompt])],
         {
           cwd: workdir,
           timeout: options.timeout,
           env: options.env,
           maxBuffer: 50_000_000,
           reject: false,
+          input: useStdin ? prompt : undefined,
         }
       )
 

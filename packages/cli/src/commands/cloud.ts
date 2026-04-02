@@ -2,7 +2,7 @@ import chalk from "chalk"
 import { readFile } from "node:fs/promises"
 import { resolve } from "node:path"
 import { createRun, streamRun } from "../cloud/client.js"
-import { renderApp, type UIController } from "../ui/render.js"
+import { renderApp } from "../ui/render.js"
 import type { ActionType } from "../agents/types.js"
 
 export interface CloudOptions {

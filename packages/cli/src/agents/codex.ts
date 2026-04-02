@@ -99,7 +99,11 @@ export const codex: AgentAdapter = {
     if (useStdin) {
       args[1] = "Follow the instructions from stdin"
     }
-    args.push("-C", workdir, "--full-auto", "--skip-git-repo-check")
+    args.push("-C", workdir)
+    if (!options.textOnly) {
+      args.push("--full-auto")
+    }
+    args.push("--skip-git-repo-check")
 
     // Add --json flag when UI is active for structured events
     if (streaming) {

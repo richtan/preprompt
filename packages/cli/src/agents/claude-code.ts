@@ -79,8 +79,11 @@ export const claudeCode: AgentAdapter = {
 
     const args = [
       "--print",
-      "--dangerously-skip-permissions",
     ]
+
+    if (!options.textOnly) {
+      args.push("--dangerously-skip-permissions")
+    }
 
     // Use stream-json when UI is active for structured events
     // Use text mode when evaluator calls (needs plain text response)

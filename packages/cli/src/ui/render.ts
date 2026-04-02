@@ -22,6 +22,7 @@ export interface AgentState {
   status: string
   history: HistoryEntry[]
   result?: AgentResult
+  evalResult?: EvalResult
   checking?: { index: number; total: number }
 }
 
@@ -68,12 +69,20 @@ function truncateLine(line: string, maxCols: number): string {
 }
 
 export function buildHeaderLine(agent: AgentState, frame: number): string {
+  if (agent.evalResult && agent.result) {
+    const failed = agent.evalResult.steps.filter((s) => s.status === "fail").length
+    const prefix = failed > 0 ? chalk.red("✗") : chalk.green("✓")
+    const failSuffix = failed > 0
+      ? `  ${chalk.red(`${failed} failed`)}`
+      : `  ${chalk.green("0 failed")}`
+    return `${prefix} ${chalk.bold(agent.name)}  ${chalk.dim(formatDur(agent.result.duration))}${failSuffix}`
+  }
   let line = `${FRAMES[frame % FRAMES.length]} ${chalk.bold(agent.name)}`
   if (agent.result) {
     line += chalk.dim(`  ${formatDur(agent.result.duration)}`)
-  }
-  if (agent.checking) {
-    line += chalk.dim(`  checking [${agent.checking.index}/${agent.checking.total}]`)
+    line += `  ${chalk.cyan("checking")}`
+  } else {
+    line += `  ${chalk.cyan("executing")}`
   }
   return line
 }
@@ -97,8 +106,8 @@ export function buildStatusSuffix(
   if (evalResult) {
     const failed = evalResult.steps.filter((s) => s.status === "fail").length
     return failed > 0
-      ? `  ${chalk.red("failed")}`
-      : `  ${chalk.green("passed")}`
+      ? `  ${chalk.red(`${failed} failed`)}`
+      : `  ${chalk.green("0 failed")}`
   }
   if (result.status === "timeout") return chalk.yellow("  timed out")
   if (result.status === "no-changes") return chalk.dim("  no changes")
@@ -116,11 +125,14 @@ export function buildDynamicLines(
   const agentList = [...agents.values()]
   if (agentList.length === 0) return []
 
-  // If even headers don't fit, show what we can + overflow indicator
-  if (agentList.length >= maxLines) {
-    const shown = Math.max(0, maxLines - 1)
+  // If even headers + separators don't fit, show what we can + overflow indicator
+  const separatorCount = agentList.length - 1
+  if (agentList.length + separatorCount > maxLines) {
+    // Each shown agent = 1 header + 1 separator (except first), plus 1 overflow line
+    const shown = Math.min(agentList.length, Math.max(1, Math.floor(maxLines / 2)))
     const lines: string[] = []
-    for (let i = 0; i < shown && i < agentList.length; i++) {
+    for (let i = 0; i < shown; i++) {
+      if (i > 0) lines.push("")
       lines.push(buildHeaderLine(agentList[i], frame))
     }
     const remaining = agentList.length - shown
@@ -130,20 +142,22 @@ export function buildDynamicLines(
     return lines
   }
 
-  // Distribute history budget across agents
-  const headerBudget = agentList.length
+  // Distribute history budget across agents (reserve lines for headers + separators)
+  const headerBudget = agentList.length + separatorCount
   const historyBudget = Math.max(0, maxLines - headerBudget)
   const perAgent = Math.floor(historyBudget / agentList.length)
 
   const lines: string[] = []
-  for (const agent of agentList) {
+  for (let i = 0; i < agentList.length; i++) {
+    if (i > 0) lines.push("")
+    const agent = agentList[i]
     lines.push(buildHeaderLine(agent, frame))
 
     const allHistory = buildHistoryLines(agent.history)
     // Reserve 1 line for trim indicator if history will be truncated
     const willTrim = allHistory.length > perAgent
     const historySlots = willTrim ? Math.max(0, perAgent - 1) : Math.min(perAgent, allHistory.length)
-    const visible = allHistory.slice(-historySlots)
+    const visible = historySlots > 0 ? allHistory.slice(-historySlots) : []
 
     const trimmed = allHistory.length - historySlots
     if (trimmed > 0) {
@@ -151,7 +165,7 @@ export function buildDynamicLines(
     }
 
     // Replace the last visible entry with a spinner prefix if agent is still working
-    if (visible.length > 0 && !agent.checking) {
+    if (visible.length > 0 && !agent.result && !agent.checking) {
       const last = agent.history[agent.history.length - 1]
       if (last) {
         visible[visible.length - 1] = `    ${FRAMES[frame % FRAMES.length]} ${last.text}`
@@ -159,6 +173,16 @@ export function buildDynamicLines(
     }
 
     lines.push(...visible)
+
+    if (agent.evalResult) {
+      const failures = agent.evalResult.steps.filter((s) => s.status === "fail")
+      if (failures.length > 0) {
+        lines.push("")
+        for (const step of failures) {
+          lines.push(chalk.red(`    - ${step.description}`))
+        }
+      }
+    }
   }
 
   return lines
@@ -170,7 +194,6 @@ export function renderApp(): UIController {
   let prevLineCount = 0
   let spinnerFrame = 0
   let interval: ReturnType<typeof setInterval> | null = null
-  let completedCount = 0
   let finished = false
 
   const isTTY = process.stdout.isTTY ?? false
@@ -203,15 +226,16 @@ export function renderApp(): UIController {
     prevLineCount = truncated.length
   }
 
-  // Hide cursor and start spinner
   if (isTTY) process.stdout.write("\x1b[?25l")
-  interval = setInterval(() => {
-    spinnerFrame = (spinnerFrame + 1) % FRAMES.length
-    redraw()
-  }, 80)
+
+  const onResize = () => { if (!finished) redraw() }
 
   if (isTTY) {
-    process.stdout.on("resize", () => { if (!finished) redraw() })
+    interval = setInterval(() => {
+      spinnerFrame = (spinnerFrame + 1) % FRAMES.length
+      redraw()
+    }, 80)
+    process.stdout.on("resize", onResize)
   }
 
   return {
@@ -245,8 +269,8 @@ export function renderApp(): UIController {
       if (!agent) return
       const last = agent.history[agent.history.length - 1]
       if (last && last.type === type && last.text === text) return
-      if (agent.history.length >= MAX_HISTORY) return
       agent.history.push({ type, text })
+      if (agent.history.length > MAX_HISTORY) agent.history.shift()
     },
 
     setAgentResult(name: string, result: AgentResult) {
@@ -263,33 +287,51 @@ export function renderApp(): UIController {
 
     setAgentEval(name: string, evalResult: EvalResult) {
       evalResults.set(name, evalResult)
+      const agent = agents.get(name)
+      if (agent) agent.evalResult = evalResult
     },
 
-    completeAgent(name: string) {
-      const agent = agents.get(name)
-      if (!agent?.result) return
-
-      clearDynamic()
-
-      const dur = formatDur(agent.result.duration)
-      const suffix = buildStatusSuffix(agent.result, evalResults.get(name))
-
-      if (completedCount > 0) console.log(" ")
-      console.log(`${chalk.bold(name)}  ${chalk.dim(dur)}${suffix}`)
-      for (const h of agent.history) {
-        console.log(`    ${historyPrefix(h.type)} ${h.text}`)
-      }
-      completedCount++
-
-      agents.delete(name)
-      redraw()
+    completeAgent(_name: string) {
+      // No-op: all agents flush at finish()
     },
 
     finish() {
       finished = true
       clearDynamic()
       if (interval) { clearInterval(interval); interval = null }
-      if (isTTY) process.stdout.write("\x1b[?25h")
+
+      const agentList = [...agents.values()]
+      for (let i = 0; i < agentList.length; i++) {
+        const agent = agentList[i]
+        if (!agent.result) continue
+
+        if (i > 0) console.log("")
+
+        const evalResult = evalResults.get(agent.name)
+        const dur = formatDur(agent.result.duration)
+        const suffix = buildStatusSuffix(agent.result, evalResult)
+
+        console.log(`${chalk.bold(agent.name)}  ${chalk.dim(dur)}${suffix}`)
+        for (const h of agent.history) {
+          console.log(`    ${historyPrefix(h.type)} ${h.text}`)
+        }
+
+        if (evalResult) {
+          const failures = evalResult.steps.filter((s) => s.status === "fail")
+          if (failures.length > 0) {
+            console.log("")
+            for (const step of failures) {
+              console.log(chalk.red(`    - ${step.description}`))
+            }
+          }
+        }
+      }
+
+      agents.clear()
+      if (isTTY) {
+        process.stdout.off("resize", onResize)
+        process.stdout.write("\x1b[?25h")
+      }
     },
   }
 }

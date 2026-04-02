@@ -14,15 +14,13 @@ import {
   renderWarning,
   renderAgentList,
   renderEvalResult,
-  renderMatrixAnalysis,
 } from "../output/terminal.js"
 import { saveMultiResult } from "../storage.js"
 import { scanPrompt } from "../scanner.js"
 import { analyzePrompt } from "../matrix.js"
-import { getErrorHint, extractErrorSummary } from "../errors.js"
 import { generateCriteria, evaluateInSandbox } from "../evaluate.js"
 import { renderApp, type UIController } from "../ui/render.js"
-import type { RunResult, MultiRunResult, EvalResult, EvalStep, Criterion, Snapshot } from "../types.js"
+import type { RunResult, MultiRunResult, EvalResult, Criterion } from "../types.js"
 
 export interface LocalOptions {
   timeout: number
@@ -34,15 +32,6 @@ export interface LocalOptions {
 function formatDur(ms: number): string {
   if (ms < 1000) return `${ms}ms`
   return `${(ms / 1000).toFixed(1)}s`
-}
-
-function visibleLength(str: string): number {
-  return str.replace(/\x1b\[[0-9;]*m/g, "").length
-}
-
-function padStartVisible(str: string, width: number): string {
-  const visible = visibleLength(str)
-  return " ".repeat(Math.max(0, width - visible)) + str
 }
 
 export function formatFileTree(files: string[]): string {
@@ -107,6 +96,81 @@ function displayCriteria(criteria: Criterion[]): number {
     }
   }
   return lines
+}
+
+async function promptRetry(): Promise<boolean> {
+  if (!process.stdin.isTTY) return false
+
+  return new Promise((resolve) => {
+    let selected = 0
+    let cursorRow = 0
+
+    process.stdout.write("\n\n")
+    process.stdout.moveCursor(0, -2)
+    cursorRow = 0
+
+    function draw() {
+      if (cursorRow === 1) {
+        process.stdout.moveCursor(0, -1)
+      }
+      cursorRow = 0
+
+      process.stdout.cursorTo(0)
+      process.stdout.write("\x1b[K")
+      process.stdout.write(selected === 0
+        ? `  ${chalk.green("❯")} ${chalk.bold("Retry")}`
+        : `    Retry`)
+
+      process.stdout.write("\n")
+      process.stdout.write("\x1b[K")
+      process.stdout.write(selected === 1
+        ? `  ${chalk.green("❯")} ${chalk.bold("Exit")}`
+        : `    Exit`)
+      cursorRow = 1
+
+      process.stdout.write("\x1b[?25l")
+      if (selected === 0) {
+        process.stdout.moveCursor(0, -1)
+        cursorRow = 0
+      }
+    }
+
+    draw()
+
+    emitKeypressEvents(process.stdin)
+    process.stdin.setRawMode(true)
+    process.stdin.resume()
+
+    function done(result: boolean) {
+      process.stdin.setRawMode(false)
+      process.stdin.pause()
+      process.stdin.removeListener("keypress", handler)
+      process.stdout.write("\x1b[?25h")
+      if (cursorRow === 1) {
+        process.stdout.moveCursor(0, -1)
+      }
+      process.stdout.cursorTo(0)
+      process.stdout.clearScreenDown()
+      resolve(result)
+    }
+
+    function handler(_ch: string | undefined, key: { name: string; ctrl: boolean }) {
+      if (!key) return
+      if (key.ctrl && key.name === "c") {
+        process.stdin.setRawMode(false)
+        process.stdout.write("\x1b[?25h")
+        process.exit(130)
+      }
+      if (key.name === "return") {
+        done(selected === 0)
+        return
+      }
+      if (key.name === "up" && selected > 0) { selected = 0; draw(); return }
+      if (key.name === "down" && selected < 1) { selected = 1; draw(); return }
+    }
+
+    process.stdin.on("keypress", handler)
+  })
 }
 
 async function promptCriteriaApproval(): Promise<{ action: "accept" } | { action: "revise"; feedback: string }> {
@@ -272,6 +336,12 @@ export async function resolvePrompt(promptInput: string): Promise<{
 interface AgentRunOutput {
   result: RunResult
   sandbox: { dir: string; destroy: () => Promise<void> }
+  agentResult: {
+    status: RunResult["status"]
+    duration: number
+    fileSummary: string
+    error?: string
+  }
 }
 
 async function runSingleAgent(
@@ -380,23 +450,6 @@ async function runSingleAgent(
   }
 }
 
-function cleanErrorNote(note: string): string {
-  const lines = note.split("\n").map((l) => l.trim()).filter(Boolean)
-  for (const line of lines) {
-    // Skip stack frames, carets, node internals, and generic throw lines
-    if (line.startsWith("at ") || line.startsWith("^")) continue
-    if (line.startsWith("node:") || line === "throw err;") continue
-    if (line.startsWith("Error:") || line.startsWith("Module not found")) {
-      return line.length > 120 ? line.slice(0, 117) + "..." : line
-    }
-    // Skip lines that are just code fragments (short, no spaces)
-    if (line.length < 15 && !line.includes(" ")) continue
-    return line.length > 120 ? line.slice(0, 117) + "..." : line
-  }
-  return lines[0]?.slice(0, 120) ?? note.slice(0, 120)
-}
-
-
 export async function runLocal(
   promptInput: string,
   options: LocalOptions
@@ -460,7 +513,7 @@ export async function runLocal(
 
   // 3. Filter agents
   if (options.agents) {
-    const requested = options.agents.split(",").map((s) => s.trim())
+    const requested = options.agents.split(",").map((s) => s.trim()).filter(Boolean)
     const filtered = installed.filter((a) => requested.includes(a.name))
     if (filtered.length === 0) {
       renderError(
@@ -494,7 +547,21 @@ export async function runLocal(
 
     stopSpinner?.()
 
-    if (criteria.length === 0) break
+    if (criteria.length === 0) {
+      if (!streaming) {
+        renderError("Criteria generation failed.")
+        process.exitCode = 1
+        return
+      }
+      renderWarning("Criteria generation failed")
+      const retry = await promptRetry()
+      if (!retry) {
+        process.exitCode = 1
+        return
+      }
+      feedback = undefined
+      continue
+    }
     if (!streaming) break // auto-approve in non-interactive modes
 
     // Display criteria (track lines for clearing on revision)
@@ -531,7 +598,35 @@ export async function runLocal(
 
   const runResults: RunResult[] = []
   const evaluations: EvalResult[] = []
-  const pendingEvals: { result: RunResult; sandbox: Sandbox }[] = []
+
+  // Async eval queue: agents push here as they finish, consumer evaluates sequentially
+  const evalQueue: { result: RunResult; sandbox: Sandbox }[] = []
+  let queueResolver: (() => void) | null = null
+  let queueClosed = false
+
+  function pushEval(item: { result: RunResult; sandbox: Sandbox }) {
+    evalQueue.push(item)
+    if (queueResolver) {
+      queueResolver()
+      queueResolver = null
+    }
+  }
+
+  function closeQueue() {
+    queueClosed = true
+    if (queueResolver) {
+      queueResolver()
+      queueResolver = null
+    }
+  }
+
+  async function popEval(): Promise<{ result: RunResult; sandbox: Sandbox } | null> {
+    while (evalQueue.length === 0) {
+      if (queueClosed) return null
+      await new Promise<void>((resolve) => { queueResolver = resolve })
+    }
+    return evalQueue.shift()!
+  }
 
   async function runAgent(adapter: AgentAdapter): Promise<void> {
     try {
@@ -541,10 +636,9 @@ export async function runLocal(
       runResults.push(result)
 
       if (ui) ui.setAgentResult(result.agent, agentResult)
-      if (ui) ui.completeAgent(result.agent)
 
       if (criteria.length > 0) {
-        pendingEvals.push({ result, sandbox })
+        pushEval({ result, sandbox })
       } else {
         await sandbox.destroy()
       }
@@ -563,45 +657,44 @@ export async function runLocal(
       runResults.push(errorResult)
       if (ui) {
         ui.setAgentResult(adapter.name, { status: "error", duration: 0, fileSummary: "no files", error: error instanceof Error ? error.message : String(error) })
-        ui.completeAgent(adapter.name)
       }
     }
   }
+
+  // 6. Evaluate sequentially as agents finish (prevents port collisions)
+  async function evalConsumer() {
+    let item: { result: RunResult; sandbox: Sandbox } | null
+    while ((item = await popEval()) !== null) {
+      const { result, sandbox } = item
+      let evalResult: EvalResult
+      try {
+        evalResult = await evaluateInSandbox(result.agent, criteria, sandbox.dir)
+      } catch {
+        evalResult = {
+          agent: result.agent,
+          criteria,
+          steps: criteria.map((c) => ({
+            number: c.number,
+            description: c.description,
+            status: "fail" as const,
+            note: "evaluation failed",
+          })),
+          score: 0,
+          duration: 0,
+        }
+      }
+      evaluations.push(evalResult)
+      if (ui) ui.setAgentEval(result.agent, evalResult)
+      try { await sandbox.destroy() } catch {}
+    }
+  }
+
+  const evalConsumerPromise = criteria.length > 0 ? evalConsumer() : Promise.resolve()
 
   await Promise.allSettled(installed.map((adapter) => runAgent(adapter)))
+  closeQueue()
 
-  // 6. Evaluate sequentially (prevents port collisions between agents)
-  for (const { result, sandbox } of pendingEvals) {
-    try {
-      const evalResult = await evaluateInSandbox(
-        result.agent, criteria, sandbox.dir
-      )
-      evaluations.push(evalResult)
-    } catch {
-      // Evaluation failed
-    }
-    await sandbox.destroy()
-  }
-
-  // Summary + per-agent eval results after all agents done
-  if (ui && evaluations.length > 0) {
-    const lines: string[] = [" "]
-
-    for (const evalResult of evaluations) {
-      const failed = evalResult.steps.filter((s) => s.status === "fail").length
-      if (failed > 0) {
-        lines.push(`${chalk.bold(evalResult.agent)}  ${chalk.red(`${failed} failed`)}`)
-        for (const step of evalResult.steps) {
-          if (step.status !== "fail") continue
-          lines.push(`    ${chalk.red("-")} ${step.description}`)
-        }
-      } else {
-        lines.push(`${chalk.bold(evalResult.agent)}  ${chalk.green("0 failed")}`)
-      }
-    }
-
-    ui.addCompletedBatch(lines)
-  }
+  await evalConsumerPromise
 
   // 7. Build multi-run result
   const multiResult: MultiRunResult = {
@@ -612,15 +705,16 @@ export async function runLocal(
     timestamp: Date.now(),
   }
 
-  // 8. Save
-  await saveMultiResult(multiResult)
+  // 8. Save + finish + render (finish UI even if save fails)
+  try {
+    await saveMultiResult(multiResult)
+  } catch {}
 
-  // 9. Finish UI
   if (ui) {
     ui.finish()
   }
 
-  // 10. Non-streaming render
+  // 9. Non-streaming render
   if (options.json) {
     console.log(JSON.stringify(multiResult, null, 2))
   } else if (!streaming) {
@@ -634,7 +728,7 @@ export async function runLocal(
     }
   }
 
-  // 11. Exit code based on evaluation scores
+  // 10. Exit code based on evaluation scores
   if (evaluations.length > 0) {
     const anyFail = evaluations.some((e) => e.steps.some((s) => s.status === "fail"))
     process.exitCode = anyFail ? 1 : 0

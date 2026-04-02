@@ -1,7 +1,6 @@
 import { execa } from "execa"
 import { execSync } from "node:child_process"
 import { access } from "node:fs/promises"
-import { join } from "node:path"
 import type { AgentAdapter } from "./agents/types.js"
 import type { EvalResult, EvalStep, Criterion } from "./types.js"
 import { createSandbox } from "./sandbox/manager.js"
@@ -96,6 +95,7 @@ export async function generateCriteria(
     const result = await analyzerAdapter.execute(criteriaPrompt, sandbox.dir, {
       timeout: 30_000,
       env: buildAgentEnv(analyzerAdapter.name),
+      textOnly: true,
     })
     const criteria = parseCriteriaResponse(result.stdout)
     return criteria ?? []
@@ -163,6 +163,7 @@ export async function evaluateInSandbox(
         timeout: CHECK_TIMEOUT,
         reject: false,
         env,
+        maxBuffer: 1_000_000,
       })
 
       const passed = result.exitCode === 0

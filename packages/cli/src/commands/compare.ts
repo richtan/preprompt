@@ -1,7 +1,6 @@
 import chalk from "chalk"
 import { loadResult, listRuns } from "../storage.js"
 import { renderError } from "../output/terminal.js"
-import type { MultiRunResult } from "../types.js"
 
 export async function runCompare(
   runIdA: string,
